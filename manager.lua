@@ -3,9 +3,14 @@ local lib = require "manager_lib"
 
 term.setCursorPos(1, 2)
 
-require("connectors.inventory")
-require("connectors.redstone")
-require("nodes.filtering")
+local connector_files = fs.list("connectors")
+for _, f in ipairs(connector_files) do
+    require("connectors." .. f:match("^(%a+)%.lua$"))
+end
+local node_files = fs.list("nodes")
+for _, f in ipairs(node_files) do
+    require("nodes." .. f:match("^(%a+)%.lua$"))
+end
 
 local args = { ... }
 if args[1] then
