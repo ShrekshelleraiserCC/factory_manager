@@ -76,6 +76,15 @@ function node__index:update_window()
     self.window.reposition(root_x + self.x, root_y + self.y, self.w, self.h)
 end
 
+function node__index:on_event(e)
+    for _, con in ipairs(self.inputs) do
+        con:on_event(e)
+    end
+    for _, con in ipairs(self.outputs) do
+        con:on_event(e)
+    end
+end
+
 --- Recalculate width/height and resize the window
 function node__index:update_size()
     local w = #(self.label or "") + 2
@@ -259,7 +268,7 @@ local function connection_end(node, connector)
     connecting = false
     if node and connector then
         connector:unlink()
-        connection_connector:setlink(node, connector)
+        connection_connector:set_link(node, connector)
     end
 end
 
@@ -396,11 +405,15 @@ end
 
 ---@param node Node
 ---@param con Connector
-function con__index:setlink(node, con)
+function con__index:set_link(node, con)
     self.link = con
     self.link_parent = node
     con.link = self
     con.link_parent = self.parent
+end
+
+function con__index:on_event(e)
+
 end
 
 ---Default no-op
@@ -1181,6 +1194,8 @@ local function editing_fields_menu(obj, set_field, field_info)
             set_field(obj, selection, get_con_type(editing_str))
         elseif field_type == "file" then
             set_field(obj, selection, get_file_menu(editing_str))
+        elseif field_type == "number" then
+            set_field(obj, selection, tonumber(get_text_menu(editing_str, "Value #:")))
         elseif field_type == "peripheral" then
             set_field(obj, selection, get_peripheral(field_info[selection].peripheral))
         end
@@ -1333,6 +1348,10 @@ local function node_interface()
                 for k, v in pairs(nodes) do
                     v:update_window()
                 end
+            else
+                for _, v in ipairs(nodes) do
+                    v:on_event(e)
+                end
             end
         end
     end
@@ -1342,7 +1361,7 @@ local function start()
     parallel.waitForAny(node_interface, handle_ticks)
 end
 
----@alias ConfigType "string"|"con_type"|"file"|"peripheral"
+---@alias ConfigType "string"|"con_type"|"file"|"peripheral"|"number"
 
 ---@alias ConfigFieldInfo table<string,{type: ConfigType,description:string?, peripheral:peripheralType[]?}>
 ---@alias ConFieldSetter fun(con: Connector, key: string, value: any)

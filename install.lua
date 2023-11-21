@@ -397,6 +397,7 @@ PrimeUI.borderBox(t, 3, 7, w - 6, h - 10)
 local selections = {
     ["connectors/inventory.lua"] = true,
     ["connectors/redstone.lua"] = false,
+    ["connectors/modem.lua"] = false,
     ["nodes/filtering.lua"] = false,
     ["item_filter.lua"] = false,
     ["draw.lua"] = "R",
