@@ -29,3 +29,10 @@ Run `manager` with no arguments to open a blank slate. You can optionally provid
 Click the bottom button to open the context sensitive menu. Then use arrow keys and enter to navigate the menus.
 
 If you need additional functionality, open up one of the connector or node files and make your own.
+
+## Terminology
+Node: Rectangles which can be dragged around, each one can contain various numbers of input and output connectors. These can be used to represent a machine, some category, or as some special packet router.
+
+Connector: Single character objects with a Node parent. Any input and output connector with the same `con_type` can be connected together, and packets sent from the output connector to the input connector.
+
+Packet: Table containing data sent from linked output to input connectors. The content of each packet depends upon what type of connector it is.

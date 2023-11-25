@@ -170,8 +170,8 @@ end
 ---@param connectors Connector[]
 ---@param side "right"|"left"
 local function draw_connectors(node, connectors, side)
-    local def_icon = side == "left" and "\008" or "\007"
     for k, v in pairs(connectors) do
+        local def_icon = v.char or "\007"
         local icon = (last_selected == v and not node.locked and "\127") or def_icon
         if last_selected == v and node.locked then
             d.set_col(colors.white, colors.black, node.window)
@@ -179,6 +179,9 @@ local function draw_connectors(node, connectors, side)
             node.window.write("\127")
         end
         d.set_col(v.color or colors.white, nil, node.window)
+        if side == "left" then
+            d.invert(node.window)
+        end
         local str, x
         if side == "right" then
             str = ("%s%s"):format(v.label or "", icon)
@@ -188,6 +191,9 @@ local function draw_connectors(node, connectors, side)
             x = 1
         end
         d.text(x, v.y, str, node.window)
+        if side == "left" then
+            d.invert(node.window)
+        end
     end
 end
 
@@ -349,7 +355,7 @@ local function merge_into(from, to)
 end
 
 ---Tick all outgoing connections of this node
----@return function[]
+---@return function[]?
 function node__index:tick()
     local funcs = {}
     for _, v in ipairs(self.outputs) do
@@ -389,6 +395,7 @@ end
 ---@field label string?
 ---@field color color?
 ---@field y integer
+---@field char string?
 ---@field id string
 ---@field recieve_packet fun(self:Connector,packet:Packet)
 ---@field tick fun(self:Connector):function[]? Run on a frequent basis
@@ -427,7 +434,7 @@ function con__index:recieve_packet(packet) end
 local function new_connector()
     local connector = {
         con_type = "DEFAULT",
-        id = uuid()
+        id = uuid(),
     }
     return setmetatable(connector, { __index = con__index })
 end
@@ -1545,7 +1552,7 @@ function serialize()
             registered_nodes[node.node_type].serialize(node)
         end
     end
-    return textutils.serialise(serializing_nodes)
+    return textutils.serialise(serializing_nodes, { compact = false })
 end
 
 ---@alias NodeT Node[]
@@ -1560,6 +1567,7 @@ function unserialize(text)
         end
     end
     nodes = unserialized_nodes
+    debug.debug()
 end
 
 return {

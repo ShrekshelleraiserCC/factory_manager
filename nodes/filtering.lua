@@ -8,20 +8,19 @@ function node__index:transfer(connector, packet)
     if not self.filter_func then
         return
     end
-    if connector ~= self.input_connector then
+    if connector ~= self.inputs[1] then
         return
     end
-    if self.filter_func(packet) then
-        lib.send_packet_to_link(self.true_connector, packet)
+    local state = self.filter_func(packet)
+    if state then
+        lib.send_packet_to_link(self.outputs[1], packet)
     else
-        lib.send_packet_to_link(self.false_connector, packet)
+        lib.send_packet_to_link(self.outputs[2], packet)
     end
+    lib.send_packet_to_link(self.outputs[3], { value = state })
 end
 
 ---@class FilteringNode : Node
----@field input_connector Connector
----@field true_connector Connector
----@field false_connector Connector
 ---@field filter string?
 ---@field filter_func function?
 ---@field arg string?
@@ -35,24 +34,35 @@ local function new_filtering_node()
     setmetatable(node, { __index = node__index })
     local input_connector = lib.new_connector()
     node:add_input(input_connector)
-    node.input_connector = input_connector
 
     local true_connector = lib.new_connector()
     true_connector.label = "TRUE"
     node:add_output(true_connector)
-    node.true_connector = true_connector
+
     local false_connector = lib.new_connector()
     false_connector.label = "FALSE"
     node:add_output(false_connector)
-    node.false_connector = false_connector
+
+    local bool_output = lib.get_connector("boolean").new()
+    node:add_output(bool_output)
 
     return node
 end
 
 ---@class SerializedFilteringNode : FilteringNode
----@field input_connector string
----@field true_connector string
----@field false_connector string
+
+local function set_type(node, value)
+    value                    = value or "DEFAULT"
+    local color              = lib.get_connector(value).color
+    node.inputs[1].color     = color
+    node.outputs[2].color    = color
+    node.outputs[1].color    = color
+    node.inputs[1].con_type  = value
+    node.outputs[2].con_type = value
+    node.outputs[1].con_type = value
+    lib.unlink(node.inputs)
+    lib.unlink(node.outputs)
+end
 
 ---@param node FilteringNode
 local function load_filter(node)
@@ -61,31 +71,25 @@ local function load_filter(node)
         if not f then return end
         local t = f.readAll() --[[@as string]]
         f.close()
-        node.filter_func = load(t)(node.arg)
+        local type, filter_func = load(t)(node.arg)
+        term.setCursorPos(1, 1)
+        node.filter_func = filter_func
+        set_type(node, type)
     end
 end
 
 ---@param node FilteringNode
 local function serialize(node)
     node = node --[[@as SerializedFilteringNode]]
-    node.input_connector = node.input_connector.id
-    node.true_connector = node.true_connector.id
-    node.false_connector = node.false_connector.id
     node.filter_func = nil
 end
 
 local function unserialize(node)
-    node.input_connector = node.inputs[1]
-    node.true_connector = node.outputs[1]
-    node.false_connector = node.outputs[2]
     setmetatable(node, { __index = node__index })
     load_filter(node)
 end
 
 local configurable_fields = {
-    type = {
-        type = "con_type",
-    },
     filter = {
         type = "file",
         description = "File returning a filter function of fun(packet):boolean"
@@ -100,18 +104,7 @@ local configurable_fields = {
 ---@param key string
 ---@param value any
 local function set_field(node, key, value)
-    if key == "type" then
-        value                         = value or "DEFAULT"
-        local color                   = lib.get_connector(value).color
-        node.input_connector.color    = color
-        node.false_connector.color    = color
-        node.true_connector.color     = color
-        node.input_connector.con_type = value
-        node.false_connector.con_type = value
-        node.true_connector.con_type  = value
-        lib.unlink(node.inputs)
-        lib.unlink(node.outputs)
-    elseif key == "filter" then
+    if key == "filter" then
         node.filter = value
         load_filter(node)
     elseif key == "arg" then

@@ -1,7 +1,7 @@
 local lib = require "manager_lib"
 
 ---@class InventoryConnector : Connector
----@field type "inventory"
+---@field con_type "inventory"
 ---@field inventory string?
 local inv_con__index = setmetatable({}, lib.con_meta)
 ---@class InvPacket : Packet

@@ -398,20 +398,37 @@ local selections = {
     ["connectors/inventory.lua"] = true,
     ["connectors/redstone.lua"] = false,
     ["connectors/modem.lua"] = false,
+    ["connectors/boolean.lua"] = false,
+    ["connectors/number.lua"] = false,
+    ["connectors/string.lua"] = false,
     ["nodes/filtering.lua"] = false,
+    ["nodes/gate.lua"] = false,
     ["item_filter.lua"] = false,
     ["draw.lua"] = "R",
     ["manager_lib.lua"] = "R",
     ["manager.lua"] = "R",
 }
-PrimeUI.checkSelectionBox(t, 3, 7, w - 6, h - 10, selections)
+local requires = {
+    ["nodes/gate.lua"] = { "connectors/boolean.lua" },
+    ["nodes/filtering.lua"] = { "connectors/boolean.lua" }
+}
+PrimeUI.checkSelectionBox(t, 3, 7, w - 6, h - 10, selections, function(option, value)
+    if requires[option] then
+        for _, v in ipairs(requires[option]) do
+            selections[v] = value and "R"
+        end
+    end
+end)
 PrimeUI.button(t, 3, h - 1, "Cancel", "cancel")
 PrimeUI.button(t, math.floor(w / 2), h - 1, "Install", "install")
 PrimeUI.keyAction(keys.enter, "install")
 local _, action = PrimeUI.run()
+term.setBackgroundColor(colors.black)
+term.setTextColor(colors.white)
 term.clear()
 term.setCursorPos(1, 1)
 if action == "cancel" then
+    print("Cancelled")
     return
 end
 
