@@ -3,6 +3,7 @@ local lib = require "manager_lib"
 ---@field type "redstone"
 ---@field side string?
 ---@field peripheral string?
+---@field last_level integer?
 local redstone_con__index = setmetatable({}, lib.con_meta)
 ---@class RedstonePacket : Packet
 ---@field level integer
@@ -24,19 +25,22 @@ end
 function redstone_con__index:tick()
     return {
         function()
+            local level
             if not self.peripheral and self.side then
-                lib.send_packet_to_link(self, { level = redstone.getAnalogInput(self.side) })
-                return
+                level = redstone.getAnalogInput(self.side)
+            elseif self.side then
+                level = peripheral.call(self.peripheral, "getAnalogInput", self.side)
             end
-            if self.side then
-                lib.send_packet_to_link(self, { level = peripheral.call(self.peripheral, "getAnalogInput", self.side) })
+            if level ~= self.last_level then
+                lib.send_packet_to_link(self, { level = level })
+                self.last_level = level
             end
         end
     }
 end
 
 local function serialize(con)
-
+    con.last_level = nil
 end
 
 local function unserialize(con)

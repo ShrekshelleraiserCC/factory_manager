@@ -52,7 +52,10 @@ end
 ---@class SerializedFilteringNode : FilteringNode
 
 local function set_type(node, value)
-    value                    = value or "DEFAULT"
+    value = value or "DEFAULT"
+    if value == node.inputs[1].con_type then
+        return
+    end
     local color              = lib.get_connector(value).color
     node.inputs[1].color     = color
     node.outputs[2].color    = color

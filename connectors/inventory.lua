@@ -3,6 +3,7 @@ local lib = require "manager_lib"
 ---@class InventoryConnector : Connector
 ---@field con_type "inventory"
 ---@field inventory string?
+---@field mode "first"|"all"?
 local inv_con__index = setmetatable({}, lib.con_meta)
 ---@class InvPacket : Packet
 ---@field inventory string
@@ -26,9 +27,25 @@ function inv_con__index:tick()
         return
     end
     local func = {}
-    for slot, item in pairs(peripheral.call(self.inventory, "list")) do
-        func[#func + 1] = function()
-            lib.send_packet_to_link(self, { inventory = self.inventory, slot = slot, item = item })
+    local listing = peripheral.call(self.inventory, "list")
+    if self.mode == "first" then
+        -- only send the first availble
+        local slot = 1
+        if next(listing) then
+            while not listing[slot] do
+                slot = slot + 1
+            end
+        end
+        if listing[slot] then
+            func[1] = function()
+                lib.send_packet_to_link(self, { inventory = self.inventory, slot = slot, item = listing[slot] })
+            end
+        end
+    else
+        for slot, item in pairs(listing) do
+            func[#func + 1] = function()
+                lib.send_packet_to_link(self, { inventory = self.inventory, slot = slot, item = item })
+            end
         end
     end
     return func
@@ -57,12 +74,18 @@ local configurable_fields = {
     inventory = {
         type = "peripheral",
         peripheral = { "inventory" }
+    },
+    mode = {
+        type = { "all", "first" },
+        description = "How to transmit items from this inventory"
     }
 }
 
 local function set_field(con, key, value)
     if key == "inventory" then
         con.inventory = value
+    elseif key == "mode" then
+        con.mode = value
     else
         error(("Attempt to set field %s on inventory."):format(key))
     end

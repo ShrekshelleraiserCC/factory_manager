@@ -1,6 +1,6 @@
 local tw, th = term.getSize()
-local nodes_win = window.create(term.current(), 1, 1, tw, th - 1)
-local button_win = window.create(term.current(), 1, th, tw, 1)
+local nodes_win = window.create(term.current(), 1, 1, tw, th - 2)
+local button_win = window.create(term.current(), 1, th - 1, tw, 2)
 local gui_win = window.create(term.current(), 1, 1, tw, th)
 
 local d = require "draw"
@@ -11,6 +11,8 @@ local line_func = d.aligned_cubic_line
 local root_x = 1
 local root_y = 1
 
+local show_packets = true
+local tick_delay = 0.1
 ---@type boolean Whether the user is currently connecting nodes togther
 local connecting = false
 ---@type Connector
@@ -152,8 +154,12 @@ end
 ---Draw the node lines
 function node__index:draw_lines()
     for k, v in pairs(self.outputs) do
-        d.set_col(v.color or colors.white, nil, nodes_win)
         if v.link then
+            if v.sent_a_packet and show_packets then
+                d.set_col(colors.orange, nil, nodes_win)
+            else
+                d.set_col(v.color or colors.white, nil, nodes_win)
+            end
             line_func(
                 self.x + self.w + root_x,
                 self.y + v.y - 1 + root_y,
@@ -178,7 +184,12 @@ local function draw_connectors(node, connectors, side)
             node.window.setCursorPos(1, 1)
             node.window.write("\127")
         end
-        d.set_col(v.color or colors.white, nil, node.window)
+        if v.sent_a_packet and show_packets then
+            d.set_col(colors.orange, nil, node.window)
+            icon = "!"
+        else
+            d.set_col(v.color or colors.white, nil, node.window)
+        end
         if side == "left" then
             d.invert(node.window)
         end
@@ -387,6 +398,7 @@ local function new_node()
 end
 
 ---@class Connector
+---@field sent_a_packet boolean?
 ---@field link Connector?
 ---@field link_parent Node?
 ---@field parent Node
@@ -439,8 +451,12 @@ local function new_connector()
     return setmetatable(connector, { __index = con__index })
 end
 
+---@param connector Connector
+---@param packet Packet
 local function send_packet_to_link(connector, packet)
+    connector.sent_a_packet = true
     if connector.link and connector.link_parent then
+        connector.link.sent_a_packet = true
         connector.link_parent:transfer(connector.link, packet)
     end
 end
@@ -474,6 +490,16 @@ local function get_last_selected_label()
     return ("Node %s"):format(label)
 end
 
+local function clear_packet_recieved(node)
+    for _, v in ipairs(node.inputs) do
+        v.sent_a_packet = nil
+    end
+    for _, v in ipairs(node.outputs) do
+        v.sent_a_packet = nil
+    end
+end
+
+local active = false
 ---@type NodeT
 local nodes = {}
 local function draw_nodes()
@@ -484,6 +510,7 @@ local function draw_nodes()
     for k, v in pairs(nodes) do
         v:draw()
         v:draw_lines()
+        clear_packet_recieved(v)
     end
     d.text(root_x, root_y, "X", nodes_win)
     nodes_win.setVisible(true)
@@ -495,6 +522,12 @@ local function draw_nodes()
         t = t:format("MENU")
     else
         t = t:format(("Edit %s"):format(get_last_selected_label()))
+    end
+    d.center_text(2, t, button_win)
+    if active then
+        t = "ACTIVE"
+    else
+        t = "PAUSED"
     end
     d.center_text(1, t, button_win)
     button_win.setVisible(true)
@@ -537,16 +570,17 @@ local function batch_execute(func, skipPartial)
     return table.pack(table.unpack(func, 1 + executeLimit * batches))
 end
 
-local tick_delay = 0.1
 local function handle_ticks()
     while true do
         sleep(tick_delay)
-        local funcs = {}
-        for _, v in ipairs(nodes) do
-            local funcs_l = v:tick()
-            merge_into(funcs_l or {}, funcs)
+        if active then
+            local funcs = {}
+            for _, v in ipairs(nodes) do
+                local funcs_l = v:tick()
+                merge_into(funcs_l or {}, funcs)
+            end
+            batch_execute(funcs)
         end
-        batch_execute(funcs)
     end
 end
 
@@ -1113,12 +1147,66 @@ local function load_menu()
     f.close()
 end
 
+local function save_settings()
+    local f = assert(fs.open("manager_settings", "w"))
+    f.write(textutils.serialize({
+        show_packets = show_packets,
+        tick_delay = tick_delay
+    }, { compact = true }))
+    f.close()
+end
+local function load_settings()
+    local f = fs.open("manager_settings", "r")
+    if not f then
+        return
+    end
+    local t = f.readAll()
+    f.close()
+    if not t then
+        return
+    end
+    local settings = textutils.unserialise(t)
+    if type(settings) == "table" then
+        show_packets = settings.show_packets
+        tick_delay = settings.tick_delay
+    end
+end
+load_settings()
+
+local function settings_menu()
+    init_ui("Settings")
+    PrimeUI.horizontalLine(gui_win, 3, 3, 6)
+    local packet_visual_text = ("[%s] Packet Visuals"):format(show_packets and "\4" or " ")
+    local tick_delay_text = ("[%.2f] Tick Delay"):format(tick_delay)
+    local entries = {
+        packet_visual_text,
+        tick_delay_text
+    }
+    local box_w, box_h = tw - 8, th - 10
+    PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
+    PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter")
+    PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
+    local _, action, selection = PrimeUI.run()
+    if action == "enter" then
+        if selection == packet_visual_text then
+            show_packets = not show_packets
+        elseif selection == tick_delay_text then
+            local input = tonumber(get_text_menu("Tick Delay", "Enter a sleep delay:"))
+            if input then
+                tick_delay = input
+            end
+        end
+    end
+    save_settings()
+end
+
 local function main_menu()
     init_ui("Menu")
     PrimeUI.horizontalLine(gui_win, 3, 3, 6)
     local entries = {
         "Add Node",
         "Reset View",
+        "Settings",
         "Save",
         "Load",
         "New",
@@ -1147,6 +1235,8 @@ local function main_menu()
             end
         elseif selection == "New" then
             nodes = {}
+        elseif selection == "Settings" then
+            settings_menu()
         end
     end
 end
@@ -1205,6 +1295,8 @@ local function editing_fields_menu(obj, set_field, field_info)
             set_field(obj, selection, tonumber(get_text_menu(editing_str, "Value #:")))
         elseif field_type == "peripheral" then
             set_field(obj, selection, get_peripheral(field_info[selection].peripheral))
+        elseif type(field_type) == "table" then
+            set_field(obj, selection, generic_selection(editing_str, field_type))
         end
     end
 end
@@ -1343,6 +1435,8 @@ local function node_interface()
             if e[1] == "mouse_click" then
                 if e[4] == th then
                     gui_button_clicked()
+                elseif e[4] == th - 1 then
+                    active = not active
                 else
                     drag_sx, drag_sy = e[3], e[4]
                     drag_root_x, drag_root_y = root_x, root_y
@@ -1368,7 +1462,7 @@ local function start()
     parallel.waitForAny(node_interface, handle_ticks)
 end
 
----@alias ConfigType "string"|"con_type"|"file"|"peripheral"|"number"
+---@alias ConfigType "string"|"con_type"|"file"|"peripheral"|"number"|string[]
 
 ---@alias ConfigFieldInfo table<string,{type: ConfigType,description:string?, peripheral:peripheralType[]?}>
 ---@alias ConFieldSetter fun(con: Connector, key: string, value: any)
@@ -1567,7 +1661,6 @@ function unserialize(text)
         end
     end
     nodes = unserialized_nodes
-    debug.debug()
 end
 
 return {
