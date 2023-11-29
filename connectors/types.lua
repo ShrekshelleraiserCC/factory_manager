@@ -20,9 +20,9 @@ local number_con_meta = { __index = number_con__index }
 local function new_connector_factory(type, color, char)
     return function()
         local con = lib.new_connector() --[[@as NumberConnector]]
-        con.con_type = "number"
-        con.color = colors.lime
-        con.char = "#"
+        con.con_type = type
+        con.color = color
+        con.char = char
         return setmetatable(con, number_con_meta)
     end
 end
