@@ -398,9 +398,7 @@ local selections = {
     ["connectors/inventory.lua"] = true,
     ["connectors/redstone.lua"] = false,
     ["connectors/modem.lua"] = false,
-    ["connectors/boolean.lua"] = false,
-    ["connectors/number.lua"] = false,
-    ["connectors/string.lua"] = false,
+    ["connectors/types.lua"] = false,
     ["nodes/filtering.lua"] = false,
     ["nodes/gate.lua"] = false,
     ["item_filter.lua"] = false,
@@ -409,8 +407,8 @@ local selections = {
     ["manager.lua"] = "R",
 }
 local requires = {
-    ["nodes/gate.lua"] = { "connectors/boolean.lua" },
-    ["nodes/filtering.lua"] = { "connectors/boolean.lua" }
+    ["nodes/gate.lua"] = { "connectors/types.lua" },
+    ["nodes/filtering.lua"] = { "connectors/types.lua" }
 }
 PrimeUI.checkSelectionBox(t, 3, 7, w - 6, h - 10, selections, function(option, value)
     if requires[option] then
