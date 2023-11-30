@@ -4,6 +4,7 @@ local lib = require "manager_lib"
 ---@field side string?
 ---@field peripheral string?
 ---@field last_level integer?
+---@field mode "always"|"on_change"?
 local redstone_con__index = setmetatable({}, lib.con_meta)
 ---@class RedstonePacket : Packet
 ---@field level integer
@@ -31,7 +32,7 @@ function redstone_con__index:tick()
             elseif self.side then
                 level = peripheral.call(self.peripheral, "getAnalogInput", self.side)
             end
-            if level ~= self.last_level then
+            if level ~= self.last_level or self.mode == "always" then
                 lib.send_packet_to_link(self, { level = level })
                 self.last_level = level
             end
@@ -65,6 +66,10 @@ local configurable_fields = {
         type = "peripheral",
         peripheral = { "redstoneIntegrator" },
         description = "Optional peripheral for redstone I/O"
+    },
+    mode = {
+        type = { "always", "on_change" },
+        description = "When to send redstone packets"
     }
 }
 
@@ -73,6 +78,8 @@ local function set_field(con, key, value)
         con.side = value
     elseif key == "peripheral" then
         con.peripheral = value
+    elseif key == "mode" then
+        con.mode = value
     else
         error(("Attempt to set field %s on redstone."):format(key))
     end

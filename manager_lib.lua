@@ -1,6 +1,5 @@
 local tw, th = term.getSize()
-local nodes_win = window.create(term.current(), 1, 1, tw, th - 2)
-local button_win = window.create(term.current(), 1, th - 1, tw, 2)
+local nodes_win = window.create(term.current(), 1, 1, tw, th)
 local gui_win = window.create(term.current(), 1, 1, tw, th)
 
 local d = require "draw"
@@ -172,12 +171,17 @@ function node__index:draw_lines()
     d.set_col(colors.white, nil, nodes_win)
 end
 
+---@type table<string,RegisteredNode>
+local registered_nodes = {}
+---@type table<string,RegisteredConnector>
+local registered_connectors = {}
+
 ---@param node Node
 ---@param connectors Connector[]
 ---@param side "right"|"left"
 local function draw_connectors(node, connectors, side)
     for k, v in pairs(connectors) do
-        local def_icon = v.char or "\007"
+        local def_icon = registered_connectors[v.con_type].char or "\007"
         local icon = (last_selected == v and not node.locked and "\127") or def_icon
         if last_selected == v and node.locked then
             d.set_col(colors.white, colors.black, node.window)
@@ -513,25 +517,25 @@ local function draw_nodes()
         clear_packet_recieved(v)
     end
     d.text(root_x, root_y, "X", nodes_win)
-    nodes_win.setVisible(true)
-    nodes_win.setVisible(false)
-    d.set_col(colors.black, colors.white, button_win)
-    button_win.clear()
-    local t = "^^^ %s ^^^"
+    d.invert(nodes_win)
+    local t = " %s (Tab) "
     if last_selected == nil then
         t = t:format("MENU")
     else
-        t = t:format(("Edit %s"):format(get_last_selected_label()))
+        t = t:format(("Edit %s"):format(get_last_selected_label():sub(1, tw - (#t + 5))))
     end
-    d.center_text(2, t, button_win)
+    nodes_win.setCursorPos(1, th)
+    nodes_win.clearLine()
+    d.center_text(th, t, nodes_win)
     if active then
-        t = "ACTIVE"
+        t = "(Space) \16"
     else
-        t = "PAUSED"
+        t = "(Space) \143"
     end
-    d.center_text(1, t, button_win)
-    button_win.setVisible(true)
-    button_win.setVisible(false)
+    d.text(tw - 8, 1, t, nodes_win)
+    d.invert(nodes_win)
+    nodes_win.setVisible(true)
+    nodes_win.setVisible(false)
 end
 
 ---@param node Node
@@ -1028,10 +1032,6 @@ local function save_to_file(fn)
     f.close()
     return true
 end
----@type table<string,RegisteredNode>
-local registered_nodes = {}
----@type table<string,RegisteredConnector>
-local registered_connectors = {}
 
 local function init_ui(header)
     d.set_col(colors.white, colors.black, gui_win)
@@ -1268,9 +1268,12 @@ end
 ---@param field_info ConfigFieldInfo
 local function editing_fields_menu(obj, set_field, field_info)
     local entries = {}
+    local entries_lut = {}
     local descriptions = {}
     for k, v in pairs(field_info) do
-        entries[#entries + 1] = k
+        local t = ("[%s] %s"):format(obj[k], k)
+        entries[#entries + 1] = t
+        entries_lut[t] = k
         descriptions[#descriptions + 1] = v.description or ""
     end
     init_ui(("Editing Fields for %s"):format(obj.label or obj.id))
@@ -1283,6 +1286,7 @@ local function editing_fields_menu(obj, set_field, field_info)
     local _, action, selection = PrimeUI.run()
     if action == "enter" then
         -- editing a field
+        selection = entries_lut[selection] -- perform translation of labels
         local field_type = field_info[selection].type
         local editing_str = ("Editing field %s"):format(selection)
         if field_type == "string" then
@@ -1433,21 +1437,21 @@ local function node_interface()
         end
         if not event_absorbed then
             if e[1] == "mouse_click" then
-                if e[4] == th then
-                    gui_button_clicked()
-                elseif e[4] == th - 1 then
-                    active = not active
-                else
-                    drag_sx, drag_sy = e[3], e[4]
-                    drag_root_x, drag_root_y = root_x, root_y
-                    dragging_root = true
-                    last_selected = nil
-                end
+                drag_sx, drag_sy = e[3], e[4]
+                drag_root_x, drag_root_y = root_x, root_y
+                dragging_root = true
+                last_selected = nil
             elseif e[1] == "mouse_drag" and dragging_root then
                 root_x = drag_root_x + e[3] - drag_sx
                 root_y = drag_root_y + e[4] - drag_sy
                 for k, v in pairs(nodes) do
                     v:update_window()
+                end
+            elseif e[1] == "key" then
+                if e[2] == keys.tab then
+                    gui_button_clicked()
+                elseif e[2] == keys.space then
+                    active = not active
                 end
             else
                 for _, v in ipairs(nodes) do
@@ -1468,7 +1472,7 @@ end
 ---@alias ConFieldSetter fun(con: Connector, key: string, value: any)
 ---@alias SerializeConFun fun(con: Connector)
 ---@alias NewConnectorFun fun():Connector
----@alias RegisteredConnector {name:string,new:NewConnectorFun,serialize:SerializeConFun,unserialize:SerializeConFun,configurable_fields:ConfigFieldInfo?,set_field:ConFieldSetter?}
+---@alias RegisteredConnector {name:string,new:NewConnectorFun,serialize:SerializeConFun,unserialize:SerializeConFun,configurable_fields:ConfigFieldInfo?,set_field:ConFieldSetter?,char:string?}
 
 
 ---Register a new type of connector
@@ -1479,14 +1483,16 @@ end
 ---@param configurable_fields ConfigFieldInfo?
 ---@param set_field ConFieldSetter?
 ---@param color color
-local function register_connector(name, new, serialize, unserialize, configurable_fields, set_field, color)
+---@param char string?
+local function register_connector(name, new, serialize, unserialize, configurable_fields, set_field, color, char)
     registered_connectors[name] = {
         new = new,
         serialize = serialize,
         unserialize = unserialize,
         configurable_fields = configurable_fields,
         set_field = set_field,
-        color = color
+        color = color,
+        char = char
     }
 end
 

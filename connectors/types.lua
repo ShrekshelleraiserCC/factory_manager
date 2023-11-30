@@ -17,12 +17,11 @@ end
 
 local number_con_meta = { __index = number_con__index }
 
-local function new_connector_factory(type, color, char)
+local function new_connector_factory(type, color)
     return function()
         local con = lib.new_connector() --[[@as NumberConnector]]
         con.con_type = type
         con.color = color
-        con.char = char
         return setmetatable(con, number_con_meta)
     end
 end
@@ -38,8 +37,8 @@ local function unserialize(con)
 end
 
 local function register_connector(con_type, color, char)
-    lib.register_connector(con_type, new_connector_factory(con_type, color, char), serialize, unserialize, nil, nil,
-        color)
+    lib.register_connector(con_type, new_connector_factory(con_type, color), serialize, unserialize, nil, nil,
+        color, char)
 end
 
 register_connector("number", colors.lime, "#")
