@@ -1386,15 +1386,18 @@ local function editing_connector_menu(con)
     end
 end
 
+local render_nodes = true
 local function gui_button_clicked()
+    render_nodes = false
     local editing = get_thing_selected_for_editing()
     if not editing then
-        return main_menu()
+        main_menu()
     elseif editing.node_type then
-        return editing_node_menu(editing)
+        editing_node_menu(editing)
     elseif editing.con_type then
-        return editing_connector_menu(editing --[[@as Connector]])
+        editing_connector_menu(editing --[[@as Connector]])
     end
+    render_nodes = true
 end
 
 
@@ -1404,7 +1407,6 @@ local drag_sx, drag_sy
 local drag_root_x, drag_root_y
 local function node_interface()
     while true do
-        draw_nodes()
         local e = { os.pullEvent() }
         local event_absorbed
         if e[1] == "mouse_drag" then
@@ -1462,8 +1464,17 @@ local function node_interface()
     end
 end
 
+local function draw()
+    while true do
+        if render_nodes then
+            draw_nodes()
+        end
+        sleep(0.1) -- 10HZ refresh rate
+    end
+end
+
 local function start()
-    parallel.waitForAny(node_interface, handle_ticks)
+    parallel.waitForAny(node_interface, handle_ticks, draw)
 end
 
 ---@alias ConfigType "string"|"con_type"|"file"|"peripheral"|"number"|string[]
