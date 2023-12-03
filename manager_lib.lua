@@ -780,6 +780,26 @@ do
         win.write(("\x8C"):rep(width))
     end
 
+    --- Adds an action to trigger when a key is pressed.
+    ---@param key number The key to trigger on, from `keys.*`
+    ---@param action function|string A function to call when clicked, or a string to use as a key for a `run` return event
+    function PrimeUI.keyAction(key, action)
+        expect(1, key, "number")
+        expect(2, action, "function", "string")
+        PrimeUI.addTask(function()
+            while true do
+                local _, param1 = os.pullEvent("key") -- wait for key
+                if param1 == key then
+                    if type(action) == "string" then
+                        PrimeUI.resolve("keyAction", action)
+                    else
+                        action()
+                    end
+                end
+            end
+        end)
+    end
+
     --- Draws a thin border around a screen region.
     ---@param win Window The window to draw on
     ---@param x number The X coordinate of the inside of the box
@@ -884,8 +904,10 @@ do
         -- Add a task for selection keys.
         PrimeUI.addTask(function()
             while true do
-                local _, key = os.pullEvent("key")
-                if key == keys.down and selection < #entries then
+                local event, key = os.pullEvent()
+                local move_down = (event == "key" and key == keys.down) or (event == "mouse_scroll" and key == 1)
+                local move_up = (event == "key" and key == keys.up) or (event == "mouse_scroll" and key == -1)
+                if move_down and selection < #entries then
                     -- Move selection down.
                     selection = selection + 1
                     if selection > scroll + height - 1 then scroll = scroll + 1 end
@@ -897,7 +919,7 @@ do
                     end
                     -- Redraw screen.
                     drawEntries()
-                elseif key == keys.up and selection > 1 then
+                elseif move_up and selection > 1 then
                     -- Move selection up.
                     selection = selection - 1
                     if selection < scroll then scroll = scroll - 1 end
@@ -909,7 +931,7 @@ do
                     end
                     -- Redraw screen.
                     drawEntries()
-                elseif key == keys.enter then
+                elseif event == "key" and key == keys.enter then
                     -- Select the entry: send the action.
                     if type(action) == "string" then
                         PrimeUI.resolve("selectionBox", action, entries[selection])
@@ -1039,6 +1061,8 @@ local function init_ui(header)
     PrimeUI.clear()
     PrimeUI.label(gui_win, 3, 2, header)
     PrimeUI.horizontalLine(gui_win, 3, 3, #header + 2)
+    PrimeUI.button(gui_win, 3, th - 2, "Cancel (tab)", "cancel")
+    PrimeUI.keyAction(keys.tab, "cancel")
 end
 
 local function generic_selection(title, options)
@@ -1046,7 +1070,6 @@ local function generic_selection(title, options)
     local box_w, box_h = tw - 8, th - 10
     PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
     PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, options, "enter")
-    PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
 
     local _, action, selection = PrimeUI.run()
     if action == "enter" then
@@ -1087,7 +1110,6 @@ local function get_text_menu(heading, label)
     init_ui(heading)
     PrimeUI.label(gui_win, 4, 6, label)
     PrimeUI.horizontalLine(gui_win, 3, 3, #heading + 2)
-    PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
     local box_w, box_h = tw - 8, 1
     PrimeUI.borderBox(gui_win, 4, 8, box_w, box_h)
     PrimeUI.inputBox(gui_win, 4, 8, box_w, "enter")
@@ -1124,7 +1146,6 @@ local function get_file_menu(title)
         local box_w, box_h = tw - 8, th - 12
         PrimeUI.borderBox(gui_win, 4, 8, box_w, box_h)
         PrimeUI.selectionBox(gui_win, 4, 8, box_w, box_h, files, "enter")
-        PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
         local _, action, selection = PrimeUI.run()
         if action == "enter" then
             path = fs.combine(path, selection)
@@ -1185,7 +1206,6 @@ local function settings_menu()
     local box_w, box_h = tw - 8, th - 10
     PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
     PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter")
-    PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
     local _, action, selection = PrimeUI.run()
     if action == "enter" then
         if selection == packet_visual_text then
@@ -1215,7 +1235,6 @@ local function main_menu()
     local box_w, box_h = tw - 8, th - 10
     PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
     PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter")
-    PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
     local _, action, selection = PrimeUI.run()
     if action == "enter" then
         if selection == "Add Node" then
@@ -1282,7 +1301,6 @@ local function editing_fields_menu(obj, set_field, field_info)
     local redraw = PrimeUI.textBox(gui_win, 4, th - 7, box_w, 3, descriptions[1])
     PrimeUI.borderBox(gui_win, 4, th - 7, box_w, 3)
     PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter", function(option) redraw(descriptions[option]) end)
-    PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
     local _, action, selection = PrimeUI.run()
     if action == "enter" then
         -- editing a field
@@ -1323,7 +1341,6 @@ local function editing_node_menu(node)
     local box_w, box_h = tw - 8, th - 10
     PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
     PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter")
-    PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
     local _, action, selection = PrimeUI.run()
     if action == "enter" then
         if selection == "Set Label" then
@@ -1362,7 +1379,6 @@ local function editing_connector_menu(con)
     local box_w, box_h = tw - 8, th - 10
     PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
     PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter")
-    PrimeUI.button(gui_win, 3, th - 2, "Cancel", "cancel")
     local _, action, selection = PrimeUI.run()
     if action == "enter" then
         if selection == "Set Label" then
