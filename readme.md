@@ -7,22 +7,6 @@ This program allows you to graphically setup the flow of items, redstone, and wh
 ### Automatic
 Just run `wget run https://raw.githubusercontent.com/MasonGulu/cc_factory_manager/main/install.lua`
 
-### Manual
-You will need the following files, in the same directory structure
-* `draw.lua`
-* `item_filter.lua`
-* `manager_lib.lua`
-* `manager.lua`
-
-If you actually want functionality you will need some types of connectors
-* `connectors/inventory.lua`
-* `connectors/redstone.lua`
-
-If you require more functionality than just moving items around, you can download custom node types
-* `nodes/filtering.lua`
-
-There is an example filter included at `item_filter.lua`
-
 ## Usage
 Run `manager` with no arguments to open a blank slate. You can optionally provide a filename as the first argument to open a saved factory.
 

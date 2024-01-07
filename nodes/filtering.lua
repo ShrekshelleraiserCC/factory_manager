@@ -95,7 +95,7 @@ end
 local configurable_fields = {
     filter = {
         type = "file",
-        description = "File returning a filter function of fun(packet):boolean"
+        description = "File returning node_type,fun(packet):boolean"
     },
     arg = {
         type = "string",

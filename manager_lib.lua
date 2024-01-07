@@ -1490,7 +1490,12 @@ local function draw()
 end
 
 local function start()
-    parallel.waitForAny(node_interface, handle_ticks, draw)
+    local ok, err = pcall(parallel.waitForAny, node_interface, handle_ticks, draw)
+    if not ok then
+        term.clear()
+        term.setCursorPos(1, 1)
+        error(err, 0)
+    end
 end
 
 ---@alias ConfigType "string"|"con_type"|"file"|"peripheral"|"number"|string[]
