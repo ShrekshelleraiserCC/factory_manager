@@ -2,9 +2,19 @@ local tw, th = term.getSize()
 local nodes_win = window.create(term.current(), 1, 1, tw, th)
 local gui_win = window.create(term.current(), 1, 1, tw, th)
 
+local pixelbox = require("pixelbox_lite")
+local box = pixelbox.new(nodes_win)
+
 local d = require "draw"
 d.set_default(nodes_win)
-local line_func = d.aligned_cubic_line
+local line_func = function(x1, y1, x2, y2)
+    local sx1, sy1, sx2, sy2 = x1 * 2 - 1, (y1 - 1) * 3 + 2, x2 * 2 + 1, (y2 - 1) * 3 + 2
+    if x2 - 3 > x1 then
+        d.smooth_step_line_box(sx1, sy1, sx2, sy2, box, nodes_win.getTextColor())
+    else
+        d.aligned_cubic_line_box(sx1, sy1, sx2, sy2, box, nodes_win.getTextColor())
+    end
+end
 
 --- Root coordinate to draw the field in relation to
 local root_x = 1
@@ -163,8 +173,7 @@ function node__index:draw_lines()
                 self.x + self.w + root_x,
                 self.y + v.y - 1 + root_y,
                 v.link_parent.x + root_x - 1,
-                v.link.parent.y + v.link.y + root_y - 1,
-                nodes_win
+                v.link.parent.y + v.link.y + root_y - 1
             )
         end
     end
@@ -508,12 +517,16 @@ local active = false
 local nodes = {}
 local function draw_nodes()
     nodes_win.clear()
+    box:clear(colors.black)
     if connecting then
-        line_func(connection_sx, connection_sy, connection_dx, connection_dy, nodes_win)
+        line_func(connection_sx, connection_sy, connection_dx, connection_dy)
     end
     for k, v in pairs(nodes) do
-        v:draw()
         v:draw_lines()
+    end
+    box:render()
+    for k, v in pairs(nodes) do
+        v:draw()
         clear_packet_recieved(v)
     end
     d.text(root_x, root_y, "X", nodes_win)

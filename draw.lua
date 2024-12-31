@@ -119,7 +119,7 @@ local function smooth_step(x, edge0, edge1)
 end
 
 ---@param ... integer
----@return integer
+---@return integer ...
 local function round(...)
     local r = {}
     for i, v in ipairs({ ... }) do
@@ -153,6 +153,25 @@ local function smooth_step_line(x1, y1, x2, y2, device, ch)
         local nx, ny = get_xy(t + interval)
         text(x, y, ch or get_slope_char((ny - oy) / (nx - ox)), device)
         ox, oy = x, y
+    end
+end
+---Draw a line between two points
+---@param x1 integer
+---@param y1 integer
+---@param x2 integer
+---@param y2 integer
+---@param col color
+local function smooth_step_line_box(x1, y1, x2, y2, box, col)
+    local line_length = distance(x1, y1, x2, y2)
+    local function get_xy(t)
+        local x = lerp(x1, x2, t)
+        local y = y1 + (smooth_step(t) * (y2 - y1))
+        return x, y
+    end
+    local interval = 0.5 / line_length
+    for t = 0, 1, interval do
+        local x, y = round(get_xy(t))
+        box:set_pixel(x, y, col)
     end
 end
 
@@ -216,6 +235,34 @@ local function cubic_line(x1, y1, x2, y2, x3, y3, x4, y4, device, ch)
     end
 end
 
+
+---Draw a cubic line aligned with the y axis
+---@param x1 integer
+---@param y1 integer
+---@param x2 integer
+---@param y2 integer
+---@param x3 integer
+---@param y3 integer
+---@param x4 integer
+---@param y4 integer
+---@param col color
+local function cubic_line_box(x1, y1, x2, y2, x3, y3, x4, y4, box, col)
+    -- local chord = distance(x1, y1, x4, y4)
+    local cont_net = distance(x1, y1, x2, y2) + distance(x2, y2, x3, y3) + distance(x3, y3, x4, y4)
+    local line_length = 0.8 * cont_net
+    local function get_xy(t)
+        local x = cubic_curve(x1, x2, x3, x4, t)
+        local y = cubic_curve(y1, y2, y3, y4, t)
+        return x, y
+    end
+    local interval = 0.5 / line_length
+    for t = 0, 1, interval do
+        local x, y = get_xy(t)
+        local r_x, r_y = round(x, y)
+        box:set_pixel(r_x, r_y, col)
+    end
+end
+
 ---Draw a cubic line aligned with the y axis
 ---@param x1 integer input
 ---@param y1 integer input
@@ -235,6 +282,26 @@ local function aligned_cubic_line(x1, y1, x4, y4, device, ch)
     x3 = x4 - offset
     y3 = y4 - y_offset
     cubic_line(x1, y1, x2, y2, x3, y3, x4, y4, device, ch)
+end
+
+---Draw a cubic line aligned with the y axis
+---@param x1 integer input
+---@param y1 integer input
+---@param x4 integer output
+---@param y4 integer output
+---@param col color
+local function aligned_cubic_line_box(x1, y1, x4, y4, box, col)
+    local x2, x3, y2, y3
+    local offset = 30 -- round(clamp(0.5 * math.abs(x1 - x4), 10, 30))
+    local y_offset = round(clamp(0.5 * math.abs(y1 - y4), 0, 30))
+    if y1 > y4 then
+        y_offset = -y_offset
+    end
+    x2 = x1 + offset
+    y2 = y1 + y_offset
+    x3 = x4 - offset
+    y3 = y4 - y_offset
+    cubic_line_box(x1, y1, x2, y2, x3, y3, x4, y4, box, col)
 end
 
 ---@param device Window
@@ -277,9 +344,12 @@ end
 return {
     line = line,
     aligned_cubic_line = aligned_cubic_line,
+    aligned_cubic_line_box = aligned_cubic_line_box,
     cubic_line = cubic_line,
+    cubic_line_box = cubic_line_box,
     quad_line = quad_line,
     smooth_step_line = smooth_step_line,
+    smooth_step_line_box = smooth_step_line_box,
     ---@param new_win Window
     set_default = function(new_win)
         win = new_win
