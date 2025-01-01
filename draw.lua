@@ -72,7 +72,7 @@ end
 
 ---@param fg color?
 ---@param bg color?
----@param dev Window
+---@param dev Window?
 local function set_col(fg, bg, dev)
     dev = dev or win
     if fg then

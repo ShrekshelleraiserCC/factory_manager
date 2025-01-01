@@ -2,7 +2,9 @@ local tw, th = term.getSize()
 local nodes_win = window.create(term.current(), 1, 1, tw, th)
 local gui_win = window.create(term.current(), 1, 1, tw, th)
 
-local pixelbox = require("pixelbox_lite")
+local pixelbox = require("libs.pixelbox_lite")
+local mbar = require("libs.mbar")
+mbar.setWindow(nodes_win)
 local box = pixelbox.new(nodes_win)
 
 local d = require "draw"
@@ -512,10 +514,12 @@ local function clear_packet_recieved(node)
     end
 end
 
+local bar
 local active = false
 ---@type NodeT
 local nodes = {}
 local function draw_nodes()
+    d.set_col(colors.white, colors.black)
     nodes_win.clear()
     box:clear(colors.black)
     if connecting then
@@ -530,21 +534,14 @@ local function draw_nodes()
         clear_packet_recieved(v)
     end
     d.text(root_x, root_y, "X", nodes_win)
-    d.invert(nodes_win)
-    local t = " %s (Tab) "
-    if last_selected == nil then
-        t = t:format("MENU")
-    else
-        t = t:format(("Edit %s"):format(get_last_selected_label():sub(1, tw - (#t + 5))))
-    end
-    nodes_win.setCursorPos(1, th)
-    nodes_win.clearLine()
-    d.center_text(th, t, nodes_win)
+    bar.render()
+    local t
     if active then
         t = "(Space) \16"
     else
         t = "(Space) \143"
     end
+    d.set_col(colors.white, colors.gray)
     d.text(tw - 8, 1, t, nodes_win)
     d.invert(nodes_win)
     nodes_win.setVisible(true)
@@ -1172,14 +1169,6 @@ local function get_file_menu(title)
 end
 
 local unserialize
-local function load_menu()
-    local path = get_file_menu("Loading")
-    if not path then return end
-    term.setCursorPos(1, 1)
-    local f = assert(fs.open(path, "r"))
-    unserialize(f.readAll() --[[@as string]])
-    f.close()
-end
 
 local function save_settings()
     local f = assert(fs.open("manager_settings", "w"))
@@ -1233,52 +1222,6 @@ local function settings_menu()
     save_settings()
 end
 
-local function main_menu()
-    init_ui("Menu")
-    PrimeUI.horizontalLine(gui_win, 3, 3, 6)
-    local entries = {
-        "Add Node",
-        "Reset View",
-        "Settings",
-        "Save",
-        "Load",
-        "New",
-        "Quit",
-    }
-    local box_w, box_h = tw - 8, th - 10
-    PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
-    PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter")
-    local _, action, selection = PrimeUI.run()
-    if action == "enter" then
-        if selection == "Add Node" then
-            new_node_menu()
-        elseif selection == "Quit" then
-            term.clear()
-            term.setCursorPos(1, 1)
-            error("Goodbye", 0)
-        elseif selection == "Save" then
-            save_menu()
-        elseif selection == "Load" then
-            load_menu()
-        elseif selection == "Reset View" then
-            root_x, root_y = 1, 1
-            for k, v in pairs(nodes) do
-                v:update_window()
-            end
-        elseif selection == "New" then
-            nodes = {}
-        elseif selection == "Settings" then
-            settings_menu()
-        end
-    end
-end
-
-local function get_label_menu()
-    local selection = get_text_menu("Label", "Label:")
-    if selection == "" then return end
-    return selection
-end
-
 local function check_filter(name, filters)
     for _, v in ipairs(filters) do
         if peripheral.hasType(name, v) then return true end
@@ -1303,7 +1246,7 @@ local function editing_fields_menu(obj, set_field, field_info)
     local entries_lut = {}
     local descriptions = {}
     for k, v in pairs(field_info) do
-        local t = ("[%s] %s"):format(obj[k], k)
+        local t = ("[%s] %s"):format(tostring(obj[k]), k)
         entries[#entries + 1] = t
         entries_lut[t] = k
         descriptions[#descriptions + 1] = v.description or ""
@@ -1336,100 +1279,191 @@ local function editing_fields_menu(obj, set_field, field_info)
     end
 end
 
-local function editing_node_menu(node)
-    local registered_node = registered_nodes[node.node_type]
-    local label = ("Editing Node %s"):format(node.label or node.id)
-    init_ui(label)
-    local entries = {
-        "Set Label",
-        "Delete",
-    }
-    if registered_node.configurable_fields then
-        entries[#entries + 1] = "Edit Fields"
-    end
-    if not node.locked then
-        entries[#entries + 1] = "Add Input"
-        entries[#entries + 1] = "Add Output"
-    end
-    local box_w, box_h = tw - 8, th - 10
-    PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
-    PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter")
-    local _, action, selection = PrimeUI.run()
-    if action == "enter" then
-        if selection == "Set Label" then
-            node.label = get_label_menu()
-            node:update_size()
-        elseif selection == "Delete" then
-            remove_node(node)
-            last_selected = nil
-        elseif selection == "Add Input" then
-            local connector = new_connector_menu()
-            if connector then
-                node:add_input(connector)
-            end
-        elseif selection == "Add Output" then
-            local connector = new_connector_menu()
-            if connector then
-                node:add_output(connector)
-            end
-        elseif selection == "Edit Fields" then
-            editing_fields_menu(node, registered_node.set_field, registered_node.configurable_fields)
-        end
-    end
-end
----@param con Connector
-local function editing_connector_menu(con)
-    local label = ("Editing Connector %s"):format(con.label or con.id)
-    init_ui(label)
-    local entries = {
-        "Set Label",
-        "Delete",
-    }
-    local registered_connector = registered_connectors[con.con_type]
-    if registered_connector.configurable_fields then
-        entries[#entries + 1] = "Edit Fields"
-    end
-    local box_w, box_h = tw - 8, th - 10
-    PrimeUI.borderBox(gui_win, 4, 6, box_w, box_h)
-    PrimeUI.selectionBox(gui_win, 4, 6, box_w, box_h, entries, "enter")
-    local _, action, selection = PrimeUI.run()
-    if action == "enter" then
-        if selection == "Set Label" then
-            con.label = get_label_menu()
-            con.parent:update_size()
-        elseif selection == "Delete" then
-            local tab = (con.direction == "input" and con.parent.inputs) or con.parent.outputs
-            for i, c in ipairs(tab) do
-                if c == con then
-                    term.setCursorPos(1, 2)
-                    c:unlink()
-                    table.remove(tab, i)
-                    con.parent:update_size()
-                    break
-                end
-            end
-            last_selected = nil
-        elseif selection == "Edit Fields" then
-            editing_fields_menu(con, registered_connector.set_field, registered_connector.configurable_fields)
-        end
-    end
-end
 
 local render_nodes = true
-local function gui_button_clicked()
-    render_nodes = false
-    local editing = get_thing_selected_for_editing()
-    if not editing then
-        main_menu()
-    elseif editing.node_type then
-        editing_node_menu(editing)
-    elseif editing.con_type then
-        editing_connector_menu(editing --[[@as Connector]])
+
+local renderTimerID
+local insertConnectorButton
+local deleteButton, fieldsButton, labelButton
+
+local function initMenubar()
+    --- File Menu
+    local quitButton = mbar.button("Quit", function(entry)
+        term.clear()
+        term.setCursorPos(1, 1)
+        error("Goodbye", 0)
+    end)
+    local saveAsButton = mbar.button("Save As", function(entry)
+        render_nodes = false
+        nodes_win.setVisible(true)
+        local fn = mbar.popupRead("Save As", 15)
+        render_nodes = true
+        if fn and fn ~= "" then
+            save_to_file(fn)
+        end
+    end)
+    local settingsButton = mbar.button("Settings", function(entry)
+        render_nodes = false
+        settings_menu()
+        render_nodes = true
+    end)
+    local resetViewButton = mbar.button("Reset View", function(entry)
+        root_x, root_y = 1, 1
+        for k, v in pairs(nodes) do
+            v:update_window()
+        end
+    end)
+    local openButton = mbar.button("Open", function(entry)
+        local complete = require("cc.shell.completion")
+        render_nodes = false
+        nodes_win.setVisible(true)
+        local fn = mbar.popupRead("Open File", 15, nil, function(str)
+            local list = complete.file(shell, str)
+            for i = #list, 1, -1 do
+                if not (list[i]:match("/$") or list[i]:match("%.fact$")) then
+                    table.remove(list, i)
+                end
+            end
+            return list
+        end)
+        render_nodes = true
+        if fn and fn ~= "" then
+            term.setCursorPos(1, 1)
+            local f = assert(fs.open(fn, "r"))
+            unserialize(f.readAll() --[[@as string]])
+            f.close()
+        end
+    end)
+    local fileMenu = mbar.buttonMenu {
+        settingsButton,
+        resetViewButton,
+        saveAsButton,
+        openButton,
+        quitButton
+    }
+    local fileButton = mbar.button("File", nil, fileMenu)
+
+
+
+    --- Insert Menu
+
+    ---@param button Button
+    local function newNodeButtonPressedCallback(button)
+        local node = registered_nodes[button.label]
+        if node then
+            add_node(node.new())
+        end
     end
-    render_nodes = true
+    local newNodeTypeButtons = {}
+    for k, v in pairs(registered_nodes) do
+        newNodeTypeButtons[#newNodeTypeButtons + 1] =
+            mbar.button(k, newNodeButtonPressedCallback)
+    end
+    local nodeTypeMenu = mbar.buttonMenu(newNodeTypeButtons)
+
+    ---@type "input"|"output"
+    local connectorSide = "input"
+    ---@param button Button
+    local function newConnectorButtonPressedCallback(button)
+        if last_selected and last_selected.node_type then
+            local connector = registered_connectors[button.label]
+            if connector then
+                local func = connectorSide == "input" and "add_input" or "add_output"
+                last_selected[func](last_selected, connector.new())
+            end
+        end
+    end
+    local newConnectorTypeButtons = {}
+    for k, v in pairs(registered_connectors) do
+        newConnectorTypeButtons[#newConnectorTypeButtons + 1] =
+            mbar.button(k, newConnectorButtonPressedCallback)
+    end
+    local inputConnectorTypeMenu = mbar.buttonMenu(newConnectorTypeButtons)
+    local outputConnectorTypeMenu = mbar.buttonMenu(newConnectorTypeButtons)
+    local newInputConnectorButton = mbar.button("Input", function(entry)
+        connectorSide = "input"
+    end, inputConnectorTypeMenu)
+    local newOutputConnectorButton = mbar.button("Output", function(entry)
+        connectorSide = "output"
+    end, outputConnectorTypeMenu)
+
+    local insertConnectorMenu = mbar.buttonMenu { newInputConnectorButton, newOutputConnectorButton }
+    insertConnectorButton = mbar.button("Connector", nil, insertConnectorMenu)
+    local insertNodeButton = mbar.button("Node", nil, nodeTypeMenu)
+
+    local insertMenu = mbar.buttonMenu {
+        insertNodeButton,
+        insertConnectorButton
+    }
+    local insertButton = mbar.button("Insert", nil, insertMenu)
+
+    --- Edit Menu
+
+    labelButton = mbar.button("Label", function(entry)
+        if last_selected then
+            render_nodes = false
+            nodes_win.setVisible(true)
+            local newLabel = mbar.popupRead("Label", 15, nil, nil, last_selected.label)
+            render_nodes = true
+            if newLabel == nil then return end
+            if newLabel == "" then newLabel = nil end
+            last_selected.label = newLabel
+            if last_selected.con_type then
+                last_selected.parent:update_size()
+            else
+                last_selected:update_size()
+            end
+        end
+    end)
+
+    deleteButton = mbar.button("Delete", function(entry)
+        if last_selected then
+            if last_selected.node_type then
+                remove_node(last_selected)
+                last_selected = nil
+            elseif last_selected.con_type then
+                local con = last_selected
+                local tab = (con.direction == "input" and con.parent.inputs) or con.parent.outputs
+                for i, c in ipairs(tab) do
+                    if c == con then
+                        term.setCursorPos(1, 2)
+                        c:unlink()
+                        table.remove(tab, i)
+                        con.parent:update_size()
+                        break
+                    end
+                end
+                last_selected = nil
+            end
+        end
+    end)
+
+    fieldsButton = mbar.button("Fields", function(entry)
+        if last_selected then
+            if last_selected.node_type then
+                local node = last_selected
+                local registered_node = registered_nodes[node.node_type]
+                render_nodes = false
+                editing_fields_menu(node, registered_node.set_field, registered_node.configurable_fields)
+                render_nodes = true
+            else
+                local con = last_selected
+                local registered_connector = registered_connectors[con.con_type]
+                render_nodes = false
+                editing_fields_menu(con, registered_connector.set_field, registered_connector.configurable_fields)
+                render_nodes = true
+            end
+        end
+    end)
+
+    local editMenu = mbar.buttonMenu { labelButton, deleteButton, fieldsButton }
+    local editButton = mbar.button("Edit", nil, editMenu)
+
+    bar = mbar.bar({ fileButton, insertButton, editButton })
+
+    bar.shortcut(quitButton, keys.q, true)
+    bar.shortcut(deleteButton, keys.delete)
 end
-
-
 
 local dragging_root = false
 local drag_sx, drag_sy
@@ -1437,34 +1471,39 @@ local drag_root_x, drag_root_y
 local function node_interface()
     while true do
         local e = { os.pullEvent() }
-        local event_absorbed
-        if e[1] == "mouse_drag" then
-            if connecting then
-                local wx, wy = nodes_win.getPosition()
-                connection_dx, connection_dy = e[3] - wx + 1, e[4] - wy + 1
-            elseif last_selected and last_selected.con_type then
-                -- The last selected thing is a connector
-                last_selected = last_selected --[[@as Connector]]
-                if last_selected.direction == "input" and last_selected.link then
-                    start_connection(
-                        last_selected.link_parent,
-                        last_selected.link,
-                        last_selected.link_parent:local_pos_to_screen(last_selected.link_parent.w + 1,
-                            last_selected.link.y)
-                    )
-                elseif last_selected.direction == "output" then
-                    start_connection(last_selected.parent, last_selected --[[@as Connector]],
-                        last_selected.parent:local_pos_to_screen(last_selected.parent.w + 1, last_selected.y))
+        local event_absorbed = bar.onEvent(e)
+        if event_absorbed then
+            os.cancelTimer(renderTimerID)
+            os.queueEvent("timer", renderTimerID)
+        else
+            if e[1] == "mouse_drag" then
+                if connecting then
+                    local wx, wy = nodes_win.getPosition()
+                    connection_dx, connection_dy = e[3] - wx + 1, e[4] - wy + 1
+                elseif last_selected and last_selected.con_type then
+                    -- The last selected thing is a connector
+                    last_selected = last_selected --[[@as Connector]]
+                    if last_selected.direction == "input" and last_selected.link then
+                        start_connection(
+                            last_selected.link_parent,
+                            last_selected.link,
+                            last_selected.link_parent:local_pos_to_screen(last_selected.link_parent.w + 1,
+                                last_selected.link.y)
+                        )
+                    elseif last_selected.direction == "output" then
+                        start_connection(last_selected.parent, last_selected --[[@as Connector]],
+                            last_selected.parent:local_pos_to_screen(last_selected.parent.w + 1, last_selected.y))
+                    end
+                else
+                    event_absorbed = distribute_event(e)
                 end
-            else
+            elseif e[1] == "mouse_click" or e[1] == "mouse_up" then
                 event_absorbed = distribute_event(e)
             end
-        elseif e[1] == "mouse_click" or e[1] == "mouse_up" then
-            event_absorbed = distribute_event(e)
-        end
-        if e[1] == "mouse_up" then
-            connecting = false
-            dragging_root = false
+            if e[1] == "mouse_up" then
+                connecting = false
+                dragging_root = false
+            end
         end
         if not event_absorbed then
             if e[1] == "mouse_click" then
@@ -1479,9 +1518,7 @@ local function node_interface()
                     v:update_window()
                 end
             elseif e[1] == "key" then
-                if e[2] == keys.tab then
-                    gui_button_clicked()
-                elseif e[2] == keys.space then
+                if e[2] == keys.space then
                     active = not active
                 end
             else
@@ -1490,19 +1527,39 @@ local function node_interface()
                 end
             end
         end
+        insertConnectorButton.enabled = not not (last_selected and last_selected.node_type)
+        deleteButton.enabled = not not last_selected
+        labelButton.enabled = not not last_selected
+        if last_selected then
+            if last_selected.con_type then
+                local registered_connector = registered_connectors[last_selected.con_type]
+                fieldsButton.enabled = not not registered_connector.configurable_fields
+            else
+                local registered_node = registered_nodes[last_selected.node_type]
+                fieldsButton.enabled = not not registered_node.configurable_fields
+            end
+        else
+            fieldsButton.enabled = false
+        end
     end
 end
 
 local function draw()
+    renderTimerID = os.startTimer(0.1)
     while true do
         if render_nodes then
             draw_nodes()
         end
-        sleep(0.1) -- 10HZ refresh rate
+        while true do
+            local _, tid = os.pullEvent("timer")
+            if tid == renderTimerID then break end
+        end
+        renderTimerID = os.startTimer(0.1)
     end
 end
 
 local function start()
+    initMenubar()
     local ok, err = pcall(parallel.waitForAny, node_interface, handle_ticks, draw)
     if not ok then
         term.clear()
