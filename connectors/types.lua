@@ -41,6 +41,6 @@ local function register_connector(con_type, color, char)
         color, char)
 end
 
-register_connector("number", colors.lime, "#")
+register_connector("number", colors.blue, "#")
 register_connector("string", colors.lime, "\"")
 register_connector("boolean", colors.lime, "?")
