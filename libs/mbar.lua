@@ -71,7 +71,7 @@ local state = {}
 
 local fg, bg = colors.white, colors.gray
 local hfg, hbg = colors.black, colors.white
-local dfg, dbg = colors.white, colors.gray
+local dfg, dbg = colors.white, colors.lightGray
 local mfg, mbg = colors.black, colors.lightGray
 
 ---@param fg color?

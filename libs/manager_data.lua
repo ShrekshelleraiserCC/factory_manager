@@ -24,35 +24,11 @@ end
 local node__index = {}
 local node_meta = { __index = node__index }
 
-
-local line_func = require("libs.line_func")
-local d = require("draw")
+-- TODO finish moving this out
 local disp_context = require("libs.disp_context")
 local nodes_win = disp_context.nodes_win
 
-local show_packets = true -- TODO swap this out
-
----@param x integer
----@param y integer
----@return integer
----@return integer
-function node__index:local_pos_to_screen(x, y)
-    local wx, wy = nodes_win.getPosition()
-    return x + self.x - 2 + disp_context.root_x + wx, y + self.y - 2 + disp_context.root_y + wy
-end
-
----@param x integer
----@param y integer
----@return integer
----@return integer
-function node__index:screen_pos_to_local(x, y)
-    local wx, wy = nodes_win.getPosition()
-    return x - self.x + 2 - disp_context.root_x - wx, y - self.y + 2 - disp_context.root_y - wy
-end
-
-function node__index:update_window()
-    self.window.reposition(disp_context.root_x + self.x, disp_context.root_y + self.y, self.w, self.h)
-end
+local tick_delay = 0.1
 
 function node__index:on_event(e)
     for i, con in ipairs(self.inputs) do
@@ -87,7 +63,9 @@ function node__index:update_size()
     end
     self.h = h
     self.w = w
-    self:update_window()
+    if self.update_window then
+        self:update_window()
+    end
 end
 
 function node__index:has_con(con)
@@ -121,88 +99,10 @@ function node__index:validate_connections()
     validate_connections(self.outputs)
 end
 
----Get a connector's position in screen space
----@param con Connector
-function node__index:get_con_root_pos(con)
-    return self.x + disp_context.root_x, self.y + con.y - 1 + disp_context.root_y
-end
-
----Draw the node lines
-function node__index:draw_lines()
-    for k, v in pairs(self.outputs) do
-        if v.link then
-            if v.sent_a_packet and show_packets then
-                d.set_col(colors.orange, nil, nodes_win)
-            else
-                d.set_col(v.color or colors.white, nil, nodes_win)
-            end
-            line_func(
-                self.x + self.w + disp_context.root_x,
-                self.y + v.y - 1 + disp_context.root_y,
-                v.link_parent.x + disp_context.root_x - 1,
-                v.link.parent.y + v.link.y + disp_context.root_y - 1
-            )
-        end
-    end
-    d.set_col(colors.white, nil, nodes_win)
-end
-
 ---@type table<string,RegisteredNode>
 local registered_nodes = {}
 ---@type table<string,RegisteredConnector>
 local registered_connectors = {}
-
----@param node Node
----@param connectors Connector[]
----@param side "right"|"left"
-local function draw_connectors(node, connectors, side)
-    for k, v in pairs(connectors) do
-        local def_icon = registered_connectors[v.con_type].char or "\007"
-        local icon = (disp_context.last_selected == v and not node.locked and "\127") or def_icon
-        if disp_context.last_selected == v and node.locked then
-            d.set_col(colors.white, colors.black, node.window)
-            node.window.setCursorPos(1, 1)
-            node.window.write("\127")
-        end
-        if v.sent_a_packet and show_packets then
-            d.set_col(colors.orange, nil, node.window)
-            icon = "!"
-        else
-            d.set_col(v.color or colors.white, nil, node.window)
-        end
-        if side == "left" then
-            d.invert(node.window)
-        end
-        local str, x
-        if side == "right" then
-            str = ("%s%s"):format(v.label or "", icon)
-            x = node.w - #str + 1
-        else
-            str = ("%s%s"):format(icon, v.label or "")
-            x = 1
-        end
-        d.text(x, v.y, str, node.window)
-        if side == "left" then
-            d.invert(node.window)
-        end
-    end
-end
-
---- Draw the node contents from scratch
-function node__index:draw()
-    self.window.setVisible(false)
-    self.window.clear()
-    d.square(1, 1, self.w, self.h, self.window)
-    if disp_context.last_selected == self then
-        self.window.setCursorPos(1, 1)
-        self.window.write("\127")
-    end
-    d.text(2, 2, self.label or "", self.window)
-    draw_connectors(self, self.inputs, "left")
-    draw_connectors(self, self.outputs, "right")
-    d.set_col(colors.white, nil, self.window)
-    self.window.setVisible(true)
-end
 
 ---Add an input connector
 ---@param con Connector
@@ -570,6 +470,44 @@ local function unserialize(text)
     nodes = unserialized_nodes
 end
 
+
+
+local executeLimit = 128 -- limit of functions to run in parallel
+---Execute a table of functions in batches
+---@param func function[]
+---@param skipPartial? boolean Only do complete batches and skip the remainder.
+---@return function[] skipped Functions that were skipped as they didn't fit.
+local function batch_execute(func, skipPartial)
+    local batches = #func / executeLimit
+    batches = skipPartial and math.floor(batches) or math.ceil(batches)
+    for batch = 1, batches do
+        local start = ((batch - 1) * executeLimit) + 1
+        local batch_end = math.min(start + executeLimit - 1, #func)
+        parallel.waitForAll(table.unpack(func, start, batch_end))
+    end
+    return table.pack(table.unpack(func, 1 + executeLimit * batches))
+end
+
+local function start_ticking()
+    while true do
+        sleep(tick_delay)
+        if active then
+            local funcs = {}
+            for _, v in ipairs(nodes) do
+                local funcs_l = v:tick()
+                merge_into(funcs_l or {}, funcs)
+            end
+            batch_execute(funcs)
+        end
+    end
+end
+
+local function distribute_event(e)
+    for k, v in pairs(nodes) do
+        if v[e[1]](v, table.unpack(e, 2, 5)) then return true end
+    end
+end
+
 return {
     node__index = node__index,
     node_meta = node_meta,
@@ -591,5 +529,7 @@ return {
         return nodes
     end,
     register_connector = register_connector,
-    register_node = register_node
+    register_node = register_node,
+    start_ticking = start_ticking,
+    distribute_event = distribute_event
 }

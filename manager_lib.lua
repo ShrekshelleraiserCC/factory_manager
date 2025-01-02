@@ -21,54 +21,6 @@ mbar.setWindow(nodes_win)
 local d = require "draw"
 d.set_default(nodes_win)
 
-local show_packets = true
-local tick_delay = 0.1
-
-
-local executeLimit = 128 -- limit of functions to run in parallel
----Execute a table of functions in batches
----@param func function[]
----@param skipPartial? boolean Only do complete batches and skip the remainder.
----@return function[] skipped Functions that were skipped as they didn't fit.
-local function batch_execute(func, skipPartial)
-    -- for _, v in ipairs(func) do
-    -- v()
-    -- end
-    local batches = #func / executeLimit
-    batches = skipPartial and math.floor(batches) or math.ceil(batches)
-    for batch = 1, batches do
-        local start = ((batch - 1) * executeLimit) + 1
-        local batch_end = math.min(start + executeLimit - 1, #func)
-        parallel.waitForAll(table.unpack(func, start, batch_end))
-    end
-    return table.pack(table.unpack(func, 1 + executeLimit * batches))
-end
-
-local function merge_into(from, to)
-    for _, func in ipairs(from) do
-        to[#to + 1] = func
-    end
-end
-
-local function handle_ticks()
-    while true do
-        sleep(tick_delay)
-        if active then
-            local funcs = {}
-            for _, v in ipairs(manager_data.get_nodes()) do
-                local funcs_l = v:tick()
-                merge_into(funcs_l or {}, funcs)
-            end
-            batch_execute(funcs)
-        end
-    end
-end
-
-local function distribute_event(e)
-    for k, v in pairs(manager_data.get_nodes()) do
-        if v[e[1]](v, table.unpack(e, 2, 5)) then return true end
-    end
-end
 
 
 local expect = require "cc.expect".expect
@@ -730,6 +682,7 @@ local render_nodes = true
 local renderTimerID
 local insertConnectorButton
 local deleteButton, fieldsButton, labelButton
+local bar
 
 local function initMenubar()
     --- File Menu
@@ -943,10 +896,10 @@ local function node_interface()
                                 disp_context.last_selected.parent.w + 1, disp_context.last_selected.y))
                     end
                 else
-                    event_absorbed = distribute_event(e)
+                    event_absorbed = manager_data.distribute_event(e)
                 end
             elseif e[1] == "mouse_click" or e[1] == "mouse_up" then
-                event_absorbed = distribute_event(e)
+                event_absorbed = manager_data.distribute_event(e)
             end
             if e[1] == "mouse_up" then
                 connecting = false
@@ -1036,7 +989,7 @@ local function start()
     ---@type thread[] array of functions to run all the modules
     local coroList = {
         coroutine.create(node_interface),
-        coroutine.create(handle_ticks),
+        coroutine.create(manager_data.start_ticking),
         coroutine.create(draw)
     }
     local coroLabels = {
