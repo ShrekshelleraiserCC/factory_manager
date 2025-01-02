@@ -5,8 +5,6 @@ local manager_control = require("libs.manager_control")
 local registered_connectors = manager_data.registered_connectors
 local registered_nodes = manager_data.registered_nodes
 
-local add_node = manager_data.add_node
-local remove_node = manager_data.remove_node
 local clear_packet_recieved = manager_data.clear_packet_recieved
 
 local start_connection = manager_control.start_connection
@@ -21,7 +19,8 @@ mbar.setWindow(nodes_win)
 local d = require "draw"
 d.set_default(nodes_win)
 
-
+---@type Factory
+local factory = manager_data.new_factory()
 
 local expect = require "cc.expect".expect
 
@@ -473,12 +472,10 @@ do
     end
 end
 
-
-local serialize
 local function save_to_file(fn)
     local f = fs.open(fn, "w")
     if not f then return false end
-    f.write(serialize())
+    f.write(factory.serialize())
     f.close()
     return true
 end
@@ -564,8 +561,6 @@ local function get_file_menu(title)
         end
     end
 end
-
-local unserialize
 
 local function save_settings()
     local f = assert(fs.open("manager_settings", "w"))
@@ -684,6 +679,10 @@ local insertConnectorButton
 local deleteButton, fieldsButton, labelButton
 local bar
 
+local function unserialize(t)
+    factory = manager_data.unserialize(t)
+end
+
 local function initMenubar()
     --- File Menu
     local quitButton = mbar.button("Quit", function(entry)
@@ -707,7 +706,7 @@ local function initMenubar()
     end)
     local resetViewButton = mbar.button("Reset View", function(entry)
         disp_context.root_x, disp_context.root_y = 1, 1
-        for k, v in pairs(manager_data.get_nodes()) do
+        for k, v in pairs(factory.nodes) do
             v:update_window()
         end
     end)
@@ -728,7 +727,7 @@ local function initMenubar()
         if fn and fn ~= "" then
             term.setCursorPos(1, 1)
             local f = assert(fs.open(fn, "r"))
-            manager_data.unserialize(f.readAll() --[[@as string]])
+            unserialize(f.readAll() --[[@as string]])
             f.close()
         end
     end)
@@ -749,7 +748,7 @@ local function initMenubar()
     local function newNodeButtonPressedCallback(button)
         local node = registered_nodes[button.label]
         if node then
-            add_node(node.new())
+            factory.add_node(node.new())
         end
     end
     local newNodeTypeButtons = {}
@@ -817,7 +816,7 @@ local function initMenubar()
     deleteButton = mbar.button("Delete", function(entry)
         if disp_context.last_selected then
             if disp_context.last_selected.node_type then
-                remove_node(disp_context.last_selected)
+                factory.remove_node(disp_context.last_selected)
                 disp_context.last_selected = nil
             elseif disp_context.last_selected.con_type then
                 local con = assert(disp_context.last_selected)
@@ -896,13 +895,13 @@ local function node_interface()
                                 disp_context.last_selected.parent.w + 1, disp_context.last_selected.y))
                     end
                 else
-                    event_absorbed = manager_data.distribute_event(e)
+                    event_absorbed = factory.distribute_event(e)
                 end
             elseif e[1] == "mouse_click" or e[1] == "mouse_up" then
-                event_absorbed = manager_data.distribute_event(e)
+                event_absorbed = factory.distribute_event(e)
             end
             if e[1] == "mouse_up" then
-                connecting = false
+                disp_context.connecting = false
                 dragging_root = false
             end
         end
@@ -915,7 +914,7 @@ local function node_interface()
             elseif e[1] == "mouse_drag" and dragging_root then
                 disp_context.root_x = drag_root_x + e[3] - drag_sx
                 disp_context.root_y = drag_root_y + e[4] - drag_sy
-                for k, v in pairs(manager_data.get_nodes()) do
+                for k, v in pairs(factory.nodes) do
                     v:update_window()
                 end
             elseif e[1] == "key" then
@@ -923,7 +922,7 @@ local function node_interface()
                     active = not active
                 end
             else
-                for _, v in ipairs(manager_data.get_nodes()) do
+                for _, v in ipairs(factory.nodes) do
                     v:on_event(e)
                 end
             end
@@ -965,13 +964,13 @@ local function draw()
     renderTimerID = os.startTimer(0.1)
     while true do
         if render_nodes then
-            manager_view.render_nodes_start(manager_data.get_nodes())
-            for k, v in pairs(manager_data.get_nodes()) do
+            manager_view.render_nodes_start(factory.nodes)
+            for k, v in pairs(factory.nodes) do
                 clear_packet_recieved(v)
             end
             manager_control.render_connection()
             manager_view.render_box()
-            manager_view.render_nodes_content(manager_data.get_nodes())
+            manager_view.render_nodes_content(factory.nodes)
             draw_ui()
             nodes_win.setVisible(true)
             nodes_win.setVisible(false)
@@ -989,7 +988,7 @@ local function start()
     ---@type thread[] array of functions to run all the modules
     local coroList = {
         coroutine.create(node_interface),
-        coroutine.create(manager_data.start_ticking),
+        coroutine.create(factory.start_ticking),
         coroutine.create(draw)
     }
     local coroLabels = {
@@ -1040,7 +1039,5 @@ end
 
 return {
     start = start,
-    add_node = add_node,
-    unserialize = manager_data.unserialize,
-    remove_node = remove_node,
+    unserialize = unserialize,
 }

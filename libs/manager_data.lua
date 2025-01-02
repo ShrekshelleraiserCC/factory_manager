@@ -255,25 +255,6 @@ local function clear_packet_recieved(node)
     end
 end
 
----@type NodeT
-local nodes = {}
-
----@param node Node
-local function add_node(node)
-    nodes[#nodes + 1] = node
-end
-
----@param node Node
-local function remove_node(node)
-    for i, node_i in ipairs(nodes) do
-        if node_i == node then
-            table.remove(nodes, i)
-            break
-        end
-    end
-    unlink(node.inputs)
-    unlink(node.outputs)
-end
 
 ---Register a new type of connector
 ---@param name string
@@ -444,31 +425,8 @@ local function unserialize_node(nodes, node)
     node:update_size()
 end
 
-local function serialize()
-    local serializing_nodes = deepcopy(nodes) --[[@as NodeT]]
-    for _, node in ipairs(serializing_nodes) do
-        node.window = nil
-        serialize_node(node)
-        if node.node_type then
-            registered_nodes[node.node_type].serialize(node)
-        end
-    end
-    return textutils.serialise(serializing_nodes, { compact = false })
-end
-
 ---@alias NodeT Node[]
 
----@param text string
-local function unserialize(text)
-    local unserialized_nodes = textutils.unserialise(text) --[[@as NodeT]]
-    for _, node in ipairs(unserialized_nodes) do
-        unserialize_node(unserialized_nodes, node)
-        if node.node_type then
-            registered_nodes[node.node_type].unserialize(node)
-        end
-    end
-    nodes = unserialized_nodes
-end
 
 
 
@@ -488,24 +446,79 @@ local function batch_execute(func, skipPartial)
     return table.pack(table.unpack(func, 1 + executeLimit * batches))
 end
 
-local function start_ticking()
-    while true do
-        sleep(tick_delay)
-        if active then
-            local funcs = {}
-            for _, v in ipairs(nodes) do
-                local funcs_l = v:tick()
-                merge_into(funcs_l or {}, funcs)
+
+local function new_factory()
+    ---@class Factory
+    local factory = {
+        ---@type NodeT
+        nodes = {}
+    }
+
+    ---@param node Node
+    function factory.add_node(node)
+        factory.nodes[#factory.nodes + 1] = node
+    end
+
+    ---@param node Node
+    function factory.remove_node(node)
+        for i, node_i in ipairs(factory.nodes) do
+            if node_i == node then
+                table.remove(factory.nodes, i)
+                break
             end
-            batch_execute(funcs)
+        end
+        unlink(node.inputs)
+        unlink(node.outputs)
+    end
+
+    function factory.start_ticking()
+        while true do
+            sleep(tick_delay)
+            if active then
+                local funcs = {}
+                for _, v in ipairs(factory.nodes) do
+                    local funcs_l = v:tick()
+                    merge_into(funcs_l or {}, funcs)
+                end
+                batch_execute(funcs)
+            end
         end
     end
+
+    function factory.distribute_event(e)
+        for k, v in ipairs(factory.nodes) do
+            if v[e[1]](v, table.unpack(e, 2, 5)) then return true end
+        end
+    end
+
+    function factory.serialize()
+        local serializing_nodes = deepcopy(factory.nodes) --[[@as NodeT]]
+        for _, node in ipairs(serializing_nodes) do
+            node.window = nil
+            serialize_node(node)
+            if node.node_type then
+                registered_nodes[node.node_type].serialize(node)
+            end
+        end
+        return textutils.serialise(serializing_nodes, { compact = false })
+    end
+
+    return factory
 end
 
-local function distribute_event(e)
-    for k, v in pairs(nodes) do
-        if v[e[1]](v, table.unpack(e, 2, 5)) then return true end
+---@param text string
+---@return Factory
+local function unserialize(text)
+    local unserialized_nodes = textutils.unserialise(text) --[[@as NodeT]]
+    for _, node in ipairs(unserialized_nodes) do
+        unserialize_node(unserialized_nodes, node)
+        if node.node_type then
+            registered_nodes[node.node_type].unserialize(node)
+        end
     end
+    local factory = new_factory()
+    factory.nodes = unserialized_nodes
+    return factory
 end
 
 return {
@@ -513,8 +526,6 @@ return {
     node_meta = node_meta,
     con__index = con__index,
     con_meta = con_meta,
-    add_node = add_node,
-    remove_node = remove_node,
     clear_packet_recieved = clear_packet_recieved,
     send_packet_to_link = send_packet_to_link,
     registered_connectors = registered_connectors,
@@ -523,13 +534,8 @@ return {
     get_connector = get_connector,
     new_node = new_node,
     get_node = get_node,
-    serialize = serialize,
     unserialize = unserialize,
-    get_nodes = function()
-        return nodes
-    end,
     register_connector = register_connector,
     register_node = register_node,
-    start_ticking = start_ticking,
-    distribute_event = distribute_event
+    new_factory = new_factory
 }
