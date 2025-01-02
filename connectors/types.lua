@@ -1,4 +1,4 @@
-local lib = require "manager_lib"
+local lib = require "libs.manager_data"
 
 ---@class NumberConnector : Connector
 ---@field con_type "number"

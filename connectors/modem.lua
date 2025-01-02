@@ -1,4 +1,4 @@
-local lib = require "manager_lib"
+local lib = require "libs.manager_data"
 ---@class ModemConnector : Connector
 ---@field con_type "modem"
 ---@field port integer?

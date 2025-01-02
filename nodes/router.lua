@@ -1,4 +1,4 @@
-local lib = require "manager_lib"
+local lib = require "libs.manager_data"
 
 local node__index = setmetatable({}, lib.node_meta)
 

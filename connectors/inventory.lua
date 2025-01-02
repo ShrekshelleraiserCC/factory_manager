@@ -1,4 +1,4 @@
-local lib = require "manager_lib"
+local lib = require "libs.manager_data"
 
 ---@class InventoryConnector : Connector
 ---@field con_type "inventory"

@@ -1,569 +1,29 @@
-local tw, th = term.getSize()
-local nodes_win = window.create(term.current(), 1, 1, tw, th)
-local gui_win = window.create(term.current(), 1, 1, tw, th)
+local disp_context = require("libs.disp_context")
+local manager_data = require("libs.manager_data")
+local manager_control = require("libs.manager_control")
 
-local pixelbox = require("libs.pixelbox_lite")
+local registered_connectors = manager_data.registered_connectors
+local registered_nodes = manager_data.registered_nodes
+
+local add_node = manager_data.add_node
+local remove_node = manager_data.remove_node
+local clear_packet_recieved = manager_data.clear_packet_recieved
+
+local start_connection = manager_control.start_connection
+
+local tw, th = term.getSize()
+local nodes_win = disp_context.nodes_win
+local gui_win = disp_context.gui_win
+
 local mbar = require("libs.mbar")
 mbar.setWindow(nodes_win)
-local box = pixelbox.new(nodes_win)
 
 local d = require "draw"
 d.set_default(nodes_win)
-local line_func = function(x1, y1, x2, y2)
-    local sx1, sy1, sx2, sy2 = x1 * 2 - 1, (y1 - 1) * 3 + 2, x2 * 2 + 1, (y2 - 1) * 3 + 2
-    if x2 - 3 > x1 then
-        d.smooth_step_line_box(sx1, sy1, sx2, sy2, box, nodes_win.getTextColor())
-    else
-        d.aligned_cubic_line_box(sx1, sy1, sx2, sy2, box, nodes_win.getTextColor())
-    end
-end
-
---- Root coordinate to draw the field in relation to
-local root_x = 1
-local root_y = 1
 
 local show_packets = true
 local tick_delay = 0.1
----@type boolean Whether the user is currently connecting nodes togther
-local connecting = false
----@type Connector
-local connection_connector
----@type integer Connecting line source
-local connection_sx
----@type integer Connecting line source
-local connection_sy
 
----@type integer Connecting line destination
-local connection_dx
----@type integer Connecting line destination
-local connection_dy
-
----@type Node|Connector? Last selected Node or Connector for editing
-local last_selected
-
-local function uuid()
-    local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
-    return string.gsub(template, '[xy]', function(c)
-        local v = (c == 'x') and math.random(0, 0xf) or math.random(8, 0xb)
-        return string.format('%x', v)
-    end)
-end
-
----@class Node Generic Node
----@field label string?
----@field id string
----@field node_type string
----@field inputs Connector[]
----@field outputs Connector[]
----@field window Window
----@field dragging boolean
----@field drag_x integer
----@field drag_y integer
----@field locked boolean? Whether editing the connectors is allowed
----@field x integer
----@field y integer
----@field w integer
----@field h integer
-local node__index = {}
-local node_meta = { __index = node__index }
-
----@param x integer
----@param y integer
----@return integer
----@return integer
-function node__index:local_pos_to_screen(x, y)
-    local wx, wy = nodes_win.getPosition()
-    return x + self.x - 2 + root_x + wx, y + self.y - 2 + root_y + wy
-end
-
----@param x integer
----@param y integer
----@return integer
----@return integer
-function node__index:screen_pos_to_local(x, y)
-    local wx, wy = nodes_win.getPosition()
-    return x - self.x + 2 - root_x - wx, y - self.y + 2 - root_y - wy
-end
-
-function node__index:update_window()
-    self.window.reposition(root_x + self.x, root_y + self.y, self.w, self.h)
-end
-
-function node__index:on_event(e)
-    for _, con in ipairs(self.inputs) do
-        con:on_event(e)
-    end
-    for _, con in ipairs(self.outputs) do
-        con:on_event(e)
-    end
-end
-
---- Recalculate width/height and resize the window
-function node__index:update_size()
-    local w = #(self.label or "") + 2
-    local h = 3
-    local connection_height = math.max(#self.inputs, #self.outputs)
-    if connection_height > 0 then
-        h = h + 1
-    end
-    for i = 1, connection_height do
-        local layer_w = 4
-        local input, output = self.inputs[i], self.outputs[i]
-        if input then
-            layer_w = layer_w + #(input.label or "")
-            input.y = h
-        end
-        if output then
-            layer_w = layer_w + #(output.label or "")
-            output.y = h
-        end
-        h = h + 2
-        w = math.max(w, layer_w)
-    end
-    self.h = h
-    self.w = w
-    self:update_window()
-end
-
-function node__index:has_con(con)
-    for i, v in ipairs(self.outputs) do
-        if v == con then
-            return true
-        end
-    end
-    for i, v in ipairs(self.outputs) do
-        if v == con then
-            return true
-        end
-    end
-    return false
-end
-
----@param connections Connector[]
-local function validate_connections(connections)
-    for i, con in ipairs(connections) do
-        if con.link and not con.link_parent:has_con(con.link) then
-            -- this link is not valid
-            con.link = nil
-            con.link_parent = nil
-        end
-    end
-end
-
---- Remove any invalid connections
-function node__index:validate_connections()
-    validate_connections(self.inputs)
-    validate_connections(self.outputs)
-end
-
----Get a connector's position in screen space
----@param con Connector
-function node__index:get_con_root_pos(con)
-    return self.x + root_x, self.y + con.y - 1 + root_y
-end
-
----Draw the node lines
-function node__index:draw_lines()
-    for k, v in pairs(self.outputs) do
-        if v.link then
-            if v.sent_a_packet and show_packets then
-                d.set_col(colors.orange, nil, nodes_win)
-            else
-                d.set_col(v.color or colors.white, nil, nodes_win)
-            end
-            line_func(
-                self.x + self.w + root_x,
-                self.y + v.y - 1 + root_y,
-                v.link_parent.x + root_x - 1,
-                v.link.parent.y + v.link.y + root_y - 1
-            )
-        end
-    end
-    d.set_col(colors.white, nil, nodes_win)
-end
-
----@type table<string,RegisteredNode>
-local registered_nodes = {}
----@type table<string,RegisteredConnector>
-local registered_connectors = {}
-
----@param node Node
----@param connectors Connector[]
----@param side "right"|"left"
-local function draw_connectors(node, connectors, side)
-    for k, v in pairs(connectors) do
-        local def_icon = registered_connectors[v.con_type].char or "\007"
-        local icon = (last_selected == v and not node.locked and "\127") or def_icon
-        if last_selected == v and node.locked then
-            d.set_col(colors.white, colors.black, node.window)
-            node.window.setCursorPos(1, 1)
-            node.window.write("\127")
-        end
-        if v.sent_a_packet and show_packets then
-            d.set_col(colors.orange, nil, node.window)
-            icon = "!"
-        else
-            d.set_col(v.color or colors.white, nil, node.window)
-        end
-        if side == "left" then
-            d.invert(node.window)
-        end
-        local str, x
-        if side == "right" then
-            str = ("%s%s"):format(v.label or "", icon)
-            x = node.w - #str + 1
-        else
-            str = ("%s%s"):format(icon, v.label or "")
-            x = 1
-        end
-        d.text(x, v.y, str, node.window)
-        if side == "left" then
-            d.invert(node.window)
-        end
-    end
-end
-
---- Draw the node contents from scratch
-function node__index:draw()
-    self.window.setVisible(false)
-    self.window.clear()
-    d.square(1, 1, self.w, self.h, self.window)
-    if last_selected == self then
-        self.window.setCursorPos(1, 1)
-        self.window.write("\127")
-    end
-    d.text(2, 2, self.label or "", self.window)
-    draw_connectors(self, self.inputs, "left")
-    draw_connectors(self, self.outputs, "right")
-    d.set_col(colors.white, nil, self.window)
-    self.window.setVisible(true)
-end
-
----Add an input connector
----@param con Connector
-function node__index:add_input(con)
-    con.direction = "input"
-    con.parent = self
-    self.inputs[#self.inputs + 1] = con
-    self:update_size()
-end
-
----Add an output connector
----@param con Connector
-function node__index:add_output(con)
-    con.direction = "output"
-    con.parent = self
-    self.outputs[#self.outputs + 1] = con
-    self:update_size()
-end
-
----@param connections Connector[]
-local function unlink(connections)
-    for i, con in ipairs(connections) do
-        if con.link then
-            con.link.link = nil
-            con.link.link_parent = nil
-            con.link = nil
-            con.link_parent = nil
-        end
-    end
-end
-
---- Delete all connections to this node
-function node__index:unlink()
-    unlink(self.inputs)
-    unlink(self.outputs)
-end
-
----Start a connection
----@param node Node
----@param connector Connector
----@param x integer
----@param y integer
-local function start_connection(node, connector, x, y)
-    if connector.link then
-        connector.link:unlink()
-        connector:unlink()
-    end
-    connecting = true
-    connection_connector = connector
-    local wx, wy = nodes_win.getPosition()
-    connection_sx, connection_sy = x - wx + 1, y - wy + 1
-    connection_dx = connection_sx
-    connection_dy = connection_sy
-end
-
----Finish a connection
----@param node Node?
----@param connector Connector?
-local function connection_end(node, connector)
-    connecting = false
-    if node and connector then
-        connector:unlink()
-        connection_connector:set_link(node, connector)
-    end
-end
-
----Provide x,y in screen space
----@param b integer
----@param x integer
----@param y integer
-function node__index:mouse_click(b, x, y)
-    x, y = self:screen_pos_to_local(x, y)
-    if x == 1 then
-        -- on the left side
-        for k, v in ipairs(self.inputs) do
-            if v.y > y then break end
-            if y == v.y then
-                last_selected = v
-                return true
-            end
-        end
-    elseif x == self.w then
-        -- on the right side
-        for k, v in ipairs(self.outputs) do
-            if v.y > y then break end
-            if y == v.y then
-                last_selected = v
-                return true
-            end
-        end
-    end
-    if y > 0 and y <= self.h and x > 0 and x <= self.w then
-        local wx, wy  = nodes_win.getPosition()
-        self.drag_x   = x + wx - 1
-        self.drag_y   = y + wy - 1
-        self.dragging = true
-        last_selected = self
-        return true
-    end
-end
-
----Provide x,y in screen space
----@param b integer
----@param x integer
----@param y integer
-function node__index:mouse_up(b, x, y)
-    x, y = self:screen_pos_to_local(x, y)
-    if self.dragging then
-        self.dragging = false
-        self:update_window()
-    end
-    if connecting and x == 1 then
-        -- on the left side
-        for k, v in ipairs(self.inputs) do
-            if v.y > y then break end
-            if y == v.y and v.con_type == connection_connector.con_type then
-                connection_end(self, v)
-                return true
-            end
-        end
-    end
-end
-
----Provide x,y in screen space
----@param b integer
----@param x integer
----@param y integer
-function node__index:mouse_drag(b, x, y)
-    if self.dragging then
-        self.x = x - root_x - self.drag_x + 1
-        self.y = y - root_y - self.drag_y + 1
-        self:update_window()
-        return true
-    end
-end
-
-local function merge_into(from, to)
-    for _, func in ipairs(from) do
-        to[#to + 1] = func
-    end
-end
-
----Tick all outgoing connections of this node
----@return function[]?
-function node__index:tick()
-    local funcs = {}
-    for _, v in ipairs(self.outputs) do
-        local funcs_l = v:tick()
-        merge_into(funcs_l or {}, funcs)
-    end
-    return funcs
-end
-
----@class Packet
-
---- Transfer data to a connector on this node
----@param connector Connector
----@param packet Packet
-function node__index:transfer(connector, packet)
-    connector:recieve_packet(packet)
-end
-
----@return Node
-local function new_node()
-    local cx, cy = -root_x + math.floor(tw / 2), -root_y + math.floor(th / 2)
-    ---@type Node
-    local node = setmetatable(
-        { x = cx, y = cy, inputs = {}, outputs = {}, id = uuid(), node_type = "DEFAULT" },
-        node_meta)
-    node.window = window.create(nodes_win, node.x, node.y, 1, 1)
-    node:update_size()
-    return node
-end
-
----@class Connector
----@field sent_a_packet boolean?
----@field link Connector?
----@field link_parent Node?
----@field parent Node
----@field con_type string
----@field direction "input"|"output"
----@field label string?
----@field color color?
----@field y integer
----@field char string?
----@field id string
----@field recieve_packet fun(self:Connector,packet:Packet)
----@field tick fun(self:Connector):function[]? Run on a frequent basis
-local con__index = {}
-
-function con__index:unlink()
-    if self.link then
-        self.link.link = nil
-        self.link.link_parent = nil
-    end
-    self.link = nil
-    self.link_parent = nil
-end
-
----@param node Node
----@param con Connector
-function con__index:set_link(node, con)
-    self.link = con
-    self.link_parent = node
-    con.link = self
-    con.link_parent = self.parent
-end
-
-function con__index:on_event(e)
-
-end
-
----Default no-op
-function con__index:tick() end
-
----Default no-op
-function con__index:recieve_packet(packet) end
-
----Create a new default connector
----@return Connector
-local function new_connector()
-    local connector = {
-        con_type = "DEFAULT",
-        id = uuid(),
-    }
-    return setmetatable(connector, { __index = con__index })
-end
-
----@param connector Connector
----@param packet Packet
-local function send_packet_to_link(connector, packet)
-    connector.sent_a_packet = true
-    if connector.link and connector.link_parent then
-        connector.link.sent_a_packet = true
-        connector.link_parent:transfer(connector.link, packet)
-    end
-end
-
----@return Connector|Node?
-local function get_thing_selected_for_editing()
-    if not last_selected then
-        return
-    end
-    if last_selected.con_type and not last_selected.parent.locked then
-        return last_selected
-    end
-    if last_selected.con_type then
-        return last_selected.parent
-    end
-    return last_selected
-end
-
----@return string?
-local function get_last_selected_label()
-    if not last_selected then
-        return
-    end
-    if last_selected.con_type and not last_selected.parent.locked then
-        return ("Connector %s"):format(last_selected.label or last_selected.id)
-    end
-    local label = last_selected.label or last_selected.id
-    if last_selected.con_type then
-        label = last_selected.parent.label or last_selected.parent.id
-    end
-    return ("Node %s"):format(label)
-end
-
-local function clear_packet_recieved(node)
-    for _, v in ipairs(node.inputs) do
-        v.sent_a_packet = nil
-    end
-    for _, v in ipairs(node.outputs) do
-        v.sent_a_packet = nil
-    end
-end
-
-local bar
-local active = false
----@type NodeT
-local nodes = {}
-local function draw_nodes()
-    d.set_col(colors.white, colors.black)
-    nodes_win.clear()
-    box:clear(colors.black)
-    if connecting then
-        line_func(connection_sx, connection_sy, connection_dx, connection_dy)
-    end
-    for k, v in pairs(nodes) do
-        v:draw_lines()
-    end
-    box:render()
-    for k, v in pairs(nodes) do
-        v:draw()
-        clear_packet_recieved(v)
-    end
-    d.text(root_x, root_y, "X", nodes_win)
-    bar.render()
-    local t
-    if active then
-        t = "(Space) \16"
-    else
-        t = "(Space) \143"
-    end
-    d.set_col(colors.white, colors.gray)
-    d.text(tw - 8, 1, t, nodes_win)
-    d.invert(nodes_win)
-    nodes_win.setVisible(true)
-    nodes_win.setVisible(false)
-end
-
----@param node Node
-local function add_node(node)
-    nodes[#nodes + 1] = node
-end
-
----@param node Node
-local function remove_node(node)
-    for i, node_i in ipairs(nodes) do
-        if node_i == node then
-            table.remove(nodes, i)
-            break
-        end
-    end
-    unlink(node.inputs)
-    unlink(node.outputs)
-end
 
 local executeLimit = 128 -- limit of functions to run in parallel
 ---Execute a table of functions in batches
@@ -584,12 +44,18 @@ local function batch_execute(func, skipPartial)
     return table.pack(table.unpack(func, 1 + executeLimit * batches))
 end
 
+local function merge_into(from, to)
+    for _, func in ipairs(from) do
+        to[#to + 1] = func
+    end
+end
+
 local function handle_ticks()
     while true do
         sleep(tick_delay)
         if active then
             local funcs = {}
-            for _, v in ipairs(nodes) do
+            for _, v in ipairs(manager_data.get_nodes()) do
                 local funcs_l = v:tick()
                 merge_into(funcs_l or {}, funcs)
             end
@@ -599,7 +65,7 @@ local function handle_ticks()
 end
 
 local function distribute_event(e)
-    for k, v in pairs(nodes) do
+    for k, v in pairs(manager_data.get_nodes()) do
         if v[e[1]](v, table.unpack(e, 2, 5)) then return true end
     end
 end
@@ -1087,33 +553,12 @@ local function generic_selection(title, options)
     end
 end
 
-local function get_node_type(label)
-    local node_types = {}
-    for k, v in pairs(registered_nodes) do
-        node_types[#node_types + 1] = k
-    end
-    return generic_selection(label, node_types)
-end
-
 local function get_con_type(label)
     local node_types = {}
     for k, v in pairs(registered_connectors) do
         node_types[#node_types + 1] = k
     end
     return generic_selection(label, node_types)
-end
-
-local function new_connector_menu()
-    local selection = get_con_type("New Connector")
-    if selection then
-        return registered_connectors[selection].new()
-    end
-end
-
-local function new_node_menu()
-    local selection = get_node_type("New Node")
-    if not selection then return end
-    add_node(registered_nodes[selection].new())
 end
 
 local function get_text_menu(heading, label)
@@ -1308,8 +753,8 @@ local function initMenubar()
         render_nodes = true
     end)
     local resetViewButton = mbar.button("Reset View", function(entry)
-        root_x, root_y = 1, 1
-        for k, v in pairs(nodes) do
+        disp_context.root_x, disp_context.root_y = 1, 1
+        for k, v in pairs(manager_data.get_nodes()) do
             v:update_window()
         end
     end)
@@ -1330,7 +775,7 @@ local function initMenubar()
         if fn and fn ~= "" then
             term.setCursorPos(1, 1)
             local f = assert(fs.open(fn, "r"))
-            unserialize(f.readAll() --[[@as string]])
+            manager_data.unserialize(f.readAll() --[[@as string]])
             f.close()
         end
     end)
@@ -1365,11 +810,11 @@ local function initMenubar()
     local connectorSide = "input"
     ---@param button Button
     local function newConnectorButtonPressedCallback(button)
-        if last_selected and last_selected.node_type then
+        if disp_context.last_selected and disp_context.last_selected.node_type then
             local connector = registered_connectors[button.label]
             if connector then
                 local func = connectorSide == "input" and "add_input" or "add_output"
-                last_selected[func](last_selected, connector.new())
+                disp_context.last_selected[func](disp_context.last_selected, connector.new())
             end
         end
     end
@@ -1400,29 +845,29 @@ local function initMenubar()
     --- Edit Menu
 
     labelButton = mbar.button("Label", function(entry)
-        if last_selected then
+        if disp_context.last_selected then
             render_nodes = false
             nodes_win.setVisible(true)
-            local newLabel = mbar.popupRead("Label", 15, nil, nil, last_selected.label)
+            local newLabel = mbar.popupRead("Label", 15, nil, nil, disp_context.last_selected.label)
             render_nodes = true
             if newLabel == nil then return end
             if newLabel == "" then newLabel = nil end
-            last_selected.label = newLabel
-            if last_selected.con_type then
-                last_selected.parent:update_size()
+            disp_context.last_selected.label = newLabel
+            if disp_context.last_selected.con_type then
+                disp_context.last_selected.parent:update_size()
             else
-                last_selected:update_size()
+                disp_context.last_selected:update_size()
             end
         end
     end)
 
     deleteButton = mbar.button("Delete", function(entry)
-        if last_selected then
-            if last_selected.node_type then
-                remove_node(last_selected)
-                last_selected = nil
-            elseif last_selected.con_type then
-                local con = last_selected
+        if disp_context.last_selected then
+            if disp_context.last_selected.node_type then
+                remove_node(disp_context.last_selected)
+                disp_context.last_selected = nil
+            elseif disp_context.last_selected.con_type then
+                local con = assert(disp_context.last_selected)
                 local tab = (con.direction == "input" and con.parent.inputs) or con.parent.outputs
                 for i, c in ipairs(tab) do
                     if c == con then
@@ -1433,21 +878,21 @@ local function initMenubar()
                         break
                     end
                 end
-                last_selected = nil
+                disp_context.last_selected = nil
             end
         end
     end)
 
     fieldsButton = mbar.button("Fields", function(entry)
-        if last_selected then
-            if last_selected.node_type then
-                local node = last_selected
+        if disp_context.last_selected then
+            if disp_context.last_selected.node_type then
+                local node = assert(disp_context.last_selected)
                 local registered_node = registered_nodes[node.node_type]
                 render_nodes = false
                 editing_fields_menu(node, registered_node.set_field, registered_node.configurable_fields)
                 render_nodes = true
             else
-                local con = last_selected
+                local con = assert(disp_context.last_selected)
                 local registered_connector = registered_connectors[con.con_type]
                 render_nodes = false
                 editing_fields_menu(con, registered_connector.set_field, registered_connector.configurable_fields)
@@ -1477,22 +922,25 @@ local function node_interface()
             os.queueEvent("timer", renderTimerID)
         else
             if e[1] == "mouse_drag" then
-                if connecting then
+                if disp_context.connecting then
                     local wx, wy = nodes_win.getPosition()
-                    connection_dx, connection_dy = e[3] - wx + 1, e[4] - wy + 1
-                elseif last_selected and last_selected.con_type then
+                    disp_context.connection_dx, disp_context.connection_dy = e[3] - wx + 1, e[4] - wy + 1
+                elseif disp_context.last_selected and disp_context.last_selected.con_type then
                     -- The last selected thing is a connector
-                    last_selected = last_selected --[[@as Connector]]
-                    if last_selected.direction == "input" and last_selected.link then
+                    disp_context.last_selected = disp_context.last_selected --[[@as Connector]]
+                    if disp_context.last_selected.direction == "input" and disp_context.last_selected.link then
                         start_connection(
-                            last_selected.link_parent,
-                            last_selected.link,
-                            last_selected.link_parent:local_pos_to_screen(last_selected.link_parent.w + 1,
-                                last_selected.link.y)
+                            disp_context.last_selected.link_parent,
+                            disp_context.last_selected.link,
+                            disp_context.last_selected.link_parent:local_pos_to_screen(
+                                disp_context.last_selected.link_parent.w + 1,
+                                disp_context.last_selected.link.y)
                         )
-                    elseif last_selected.direction == "output" then
-                        start_connection(last_selected.parent, last_selected --[[@as Connector]],
-                            last_selected.parent:local_pos_to_screen(last_selected.parent.w + 1, last_selected.y))
+                    elseif disp_context.last_selected.direction == "output" then
+                        start_connection(disp_context.last_selected.parent,
+                            disp_context.last_selected --[[@as Connector]],
+                            disp_context.last_selected.parent:local_pos_to_screen(
+                                disp_context.last_selected.parent.w + 1, disp_context.last_selected.y))
                     end
                 else
                     event_absorbed = distribute_event(e)
@@ -1508,13 +956,13 @@ local function node_interface()
         if not event_absorbed then
             if e[1] == "mouse_click" then
                 drag_sx, drag_sy = e[3], e[4]
-                drag_root_x, drag_root_y = root_x, root_y
+                drag_root_x, drag_root_y = disp_context.root_x, disp_context.root_y
                 dragging_root = true
-                last_selected = nil
+                disp_context.last_selected = nil
             elseif e[1] == "mouse_drag" and dragging_root then
-                root_x = drag_root_x + e[3] - drag_sx
-                root_y = drag_root_y + e[4] - drag_sy
-                for k, v in pairs(nodes) do
+                disp_context.root_x = drag_root_x + e[3] - drag_sx
+                disp_context.root_y = drag_root_y + e[4] - drag_sy
+                for k, v in pairs(manager_data.get_nodes()) do
                     v:update_window()
                 end
             elseif e[1] == "key" then
@@ -1522,20 +970,20 @@ local function node_interface()
                     active = not active
                 end
             else
-                for _, v in ipairs(nodes) do
+                for _, v in ipairs(manager_data.get_nodes()) do
                     v:on_event(e)
                 end
             end
         end
-        insertConnectorButton.enabled = not not (last_selected and last_selected.node_type)
-        deleteButton.enabled = not not last_selected
-        labelButton.enabled = not not last_selected
-        if last_selected then
-            if last_selected.con_type then
-                local registered_connector = registered_connectors[last_selected.con_type]
+        insertConnectorButton.enabled = not not (disp_context.last_selected and disp_context.last_selected.node_type)
+        deleteButton.enabled = not not disp_context.last_selected
+        labelButton.enabled = not not disp_context.last_selected
+        if disp_context.last_selected then
+            if disp_context.last_selected.con_type then
+                local registered_connector = registered_connectors[disp_context.last_selected.con_type]
                 fieldsButton.enabled = not not registered_connector.configurable_fields
             else
-                local registered_node = registered_nodes[last_selected.node_type]
+                local registered_node = registered_nodes[disp_context.last_selected.node_type]
                 fieldsButton.enabled = not not registered_node.configurable_fields
             end
         else
@@ -1544,11 +992,36 @@ local function node_interface()
     end
 end
 
+local function draw_ui()
+    d.text(disp_context.root_x, disp_context.root_y, "X", nodes_win)
+    bar.render()
+    local t
+    if active then
+        t = "(Space) \16"
+    else
+        t = "(Space) \143"
+    end
+    d.set_col(colors.white, colors.gray)
+    d.text(tw - 8, 1, t, nodes_win)
+    d.invert(nodes_win)
+end
+
+local manager_view = require("libs.manager_view")
+
 local function draw()
     renderTimerID = os.startTimer(0.1)
     while true do
         if render_nodes then
-            draw_nodes()
+            manager_view.render_nodes_start(manager_data.get_nodes())
+            for k, v in pairs(manager_data.get_nodes()) do
+                clear_packet_recieved(v)
+            end
+            manager_control.render_connection()
+            manager_view.render_box()
+            manager_view.render_nodes_content(manager_data.get_nodes())
+            draw_ui()
+            nodes_win.setVisible(true)
+            nodes_win.setVisible(false)
         end
         while true do
             local _, tid = os.pullEvent("timer")
@@ -1560,11 +1033,44 @@ end
 
 local function start()
     initMenubar()
-    local ok, err = pcall(parallel.waitForAny, node_interface, handle_ticks, draw)
-    if not ok then
-        term.clear()
-        term.setCursorPos(1, 1)
-        error(err, 0)
+    ---@type thread[] array of functions to run all the modules
+    local coroList = {
+        coroutine.create(node_interface),
+        coroutine.create(handle_ticks),
+        coroutine.create(draw)
+    }
+    local coroLabels = {
+        "node_interface",
+        "handle_ticks",
+        "draw"
+    }
+    ---@type table<thread,string|nil>
+    local coroFilters = {}
+
+    while true do
+        local timerId = os.startTimer(0)
+        local e = table.pack(os.pullEventRaw())
+        os.cancelTimer(timerId)
+        if e[1] == "terminate" then
+            print("Terminated.")
+            return
+        end
+        for i, co in ipairs(coroList) do
+            if not coroFilters[co] or coroFilters[co] == "" or coroFilters[co] == e[1] then
+                local ok, filter = coroutine.resume(co, table.unpack(e, 1, e.n))
+                if not ok then
+                    term.setTextColor(colors.red)
+                    term.setBackgroundColor(colors.black)
+                    term.setCursorPos(1, 1)
+                    term.clear()
+                    print(("Error in %s"):format(coroLabels[i]))
+                    print(filter)
+                    error(debug.traceback(co), 0)
+                    return
+                end
+                coroFilters[co] = filter
+            end
+        end
     end
 end
 
@@ -1577,215 +1083,11 @@ end
 ---@alias RegisteredConnector {name:string,new:NewConnectorFun,serialize:SerializeConFun,unserialize:SerializeConFun,configurable_fields:ConfigFieldInfo?,set_field:ConFieldSetter?,char:string?}
 
 
----Register a new type of connector
----@param name string
----@param new fun(): Connector
----@param serialize SerializeConFun
----@param unserialize SerializeConFun
----@param configurable_fields ConfigFieldInfo?
----@param set_field ConFieldSetter?
----@param color color
----@param char string?
-local function register_connector(name, new, serialize, unserialize, configurable_fields, set_field, color, char)
-    registered_connectors[name] = {
-        new = new,
-        serialize = serialize,
-        unserialize = unserialize,
-        configurable_fields = configurable_fields,
-        set_field = set_field,
-        color = color,
-        char = char
-    }
-end
 
-register_connector("DEFAULT", new_connector, function() end, function() end, nil, nil, colors.white)
----@param name string
----@return RegisteredConnector
-local function get_connector(name)
-    return registered_connectors[name]
-end
-
-
----@alias NodeFieldSetter fun(con: Node, key: string, value: any)
----@alias SerializeNodeFun fun(con: Node)
----@alias NewNodeFun fun():Node
----@alias RegisteredNode {name:string,new:NewNodeFun,serialize:SerializeNodeFun,unserialize:SerializeNodeFun,configurable_fields:ConfigFieldInfo?,set_field:NodeFieldSetter?}
-
-
----@param name string
----@param new NewNodeFun
----@param serialize SerializeNodeFun
----@param unserialize SerializeNodeFun
----@param configurable_fields ConfigFieldInfo?
----@param set_field NodeFieldSetter?
-local function register_node(name, new, serialize, unserialize, configurable_fields, set_field)
-    registered_nodes[name] = {
-        new = new,
-        serialize = serialize,
-        unserialize = unserialize,
-        configurable_fields = configurable_fields,
-        set_field = set_field
-    }
-end
-
-register_node("DEFAULT", new_node, function() end, function() end, nil, nil)
-
----@param name string
----@return RegisteredNode
-local function get_node(name)
-    return registered_nodes[name]
-end
-
---- Thanks 9551 https://github.com/9551-Dev/libC3D-dev/blob/dev/common/table_util.lua#L56-L85
-local function deepcopy(tbl, keep, seen)
-    local instance_seen = seen or {}
-    local out = {}
-    instance_seen[tbl] = out
-    for copied_key, copied_value in pairs(tbl) do
-        local is_table = type(copied_value) == "table" and not (keep and keep[copied_key])
-
-        if type(copied_key) == "table" then
-            if instance_seen[copied_key] then
-                copied_key = instance_seen[copied_key]
-            else
-                local new_instance = deepcopy(copied_key, keep, instance_seen)
-                instance_seen[copied_key] = new_instance
-                copied_key = new_instance
-            end
-        end
-
-        if is_table and not instance_seen[copied_value] then
-            local new_instance = deepcopy(copied_value, keep, instance_seen)
-            instance_seen[copied_value] = new_instance
-            out[copied_key] = new_instance
-        elseif is_table and instance_seen[copied_value] then
-            out[copied_key] = instance_seen[copied_value]
-        else
-            out[copied_key] = copied_value
-        end
-    end
-
-    return setmetatable(out, getmetatable(tbl))
-end
-
----@class Serialized_Connector : Connector
----@field link string?
----@field link_parent string?
----@field parent string
-
----@param con Connector
-local function serialize_connector(con)
-    con = con --[[@as Serialized_Connector]]
-    if con.link then
-        con.link = con.link.id
-        con.link_parent = con.link_parent.id
-    end
-    con.parent = con.parent.id
-    registered_connectors[con.con_type].serialize(con)
-end
-
----@param node Node
-local function serialize_node(node)
-    for _, con in ipairs(node.inputs) do
-        serialize_connector(con)
-    end
-    for _, con in ipairs(node.outputs) do
-        serialize_connector(con)
-    end
-end
-
-local function search_for_connector_link(con_array, con)
-    for _, con_child in ipairs(con_array) do
-        if con_child.id == con.link then
-            con.link = con_child
-            return true
-        end
-    end
-end
-
----@param nodes Node[] Table of nodes currently being unserialized
----@param con Connector
-local function unserialize_connector(nodes, con)
-    if con.link then
-        for _, node in ipairs(nodes) do
-            if node.id == con.link_parent then
-                con.link_parent = node
-                break
-            end
-        end
-        if type(con.link_parent) == "string" then
-            error(("Unable to find connector parent %s"):format(con.link_parent))
-        end
-        local found_link = search_for_connector_link(con.link_parent.inputs, con) or
-            search_for_connector_link(con.link_parent.outputs, con)
-        if not found_link then
-            error(("Unable to find connector link %s"):format(con.link))
-        end
-    end
-    if registered_connectors[con.con_type] then
-        registered_connectors[con.con_type].unserialize(con)
-    else
-        error(("Unrecognized connectory type %s"):format(con.con_type))
-    end
-end
-
----@param nodes Node[] Table of nodes currently being unserialized
----@param node Node
-local function unserialize_node(nodes, node)
-    for _, con in ipairs(node.inputs) do
-        con.parent = node
-        unserialize_connector(nodes, con)
-    end
-    for _, con in ipairs(node.outputs) do
-        con.parent = node
-        unserialize_connector(nodes, con)
-    end
-    node.window = window.create(nodes_win, node.x, node.y, 1, 1)
-    setmetatable(node, node_meta)
-    node:update_size()
-end
-
-function serialize()
-    local serializing_nodes = deepcopy(nodes) --[[@as NodeT]]
-    for _, node in ipairs(serializing_nodes) do
-        node.window = nil
-        serialize_node(node)
-        if node.node_type then
-            registered_nodes[node.node_type].serialize(node)
-        end
-    end
-    return textutils.serialise(serializing_nodes, { compact = false })
-end
-
----@alias NodeT Node[]
-
----@param text string
-function unserialize(text)
-    local unserialized_nodes = textutils.unserialise(text) --[[@as NodeT]]
-    for _, node in ipairs(unserialized_nodes) do
-        unserialize_node(unserialized_nodes, node)
-        if node.node_type then
-            registered_nodes[node.node_type].unserialize(node)
-        end
-    end
-    nodes = unserialized_nodes
-end
 
 return {
-    send_packet_to_link = send_packet_to_link,
-    node_meta = node_meta,
-    new_node = new_node,
-    con_meta = { __index = con__index },
-    new_connector = new_connector,
-    draw_nodes = draw_nodes,
     start = start,
-    register_connector = register_connector,
-    get_connector = get_connector,
     add_node = add_node,
-    serialize = serialize,
-    unserialize = unserialize,
+    unserialize = manager_data.unserialize,
     remove_node = remove_node,
-    register_node = register_node,
-    get_node = get_node,
-    unlink = unlink
 }
