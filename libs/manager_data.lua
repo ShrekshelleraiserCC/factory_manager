@@ -58,7 +58,7 @@ function node__index:update_size()
             layer_w = layer_w + #(output.label or "")
             output.y = h
         end
-        h = h + 2
+        h = h + 1
         w = math.max(w, layer_w)
     end
     self.h = h
