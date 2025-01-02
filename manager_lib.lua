@@ -475,7 +475,7 @@ end
 local function save_to_file(fn)
     local f = fs.open(fn, "w")
     if not f then return false end
-    f.write(factory.serialize())
+    f.write(factory:serialize())
     f.close()
     return true
 end
@@ -748,7 +748,7 @@ local function initMenubar()
     local function newNodeButtonPressedCallback(button)
         local node = registered_nodes[button.label]
         if node then
-            factory.add_node(node.new())
+            factory:add_node(node.new())
         end
     end
     local newNodeTypeButtons = {}
@@ -816,7 +816,7 @@ local function initMenubar()
     deleteButton = mbar.button("Delete", function(entry)
         if disp_context.last_selected then
             if disp_context.last_selected.node_type then
-                factory.remove_node(disp_context.last_selected)
+                factory:remove_node(disp_context.last_selected)
                 disp_context.last_selected = nil
             elseif disp_context.last_selected.con_type then
                 local con = assert(disp_context.last_selected)
@@ -895,10 +895,10 @@ local function node_interface()
                                 disp_context.last_selected.parent.w + 1, disp_context.last_selected.y))
                     end
                 else
-                    event_absorbed = factory.distribute_event(e)
+                    event_absorbed = factory:distribute_event(e)
                 end
             elseif e[1] == "mouse_click" or e[1] == "mouse_up" then
-                event_absorbed = factory.distribute_event(e)
+                event_absorbed = factory:distribute_event(e)
             end
             if e[1] == "mouse_up" then
                 disp_context.connecting = false
@@ -988,7 +988,7 @@ local function start()
     ---@type thread[] array of functions to run all the modules
     local coroList = {
         coroutine.create(node_interface),
-        coroutine.create(factory.start_ticking),
+        coroutine.create(function() factory:start_ticking() end),
         coroutine.create(draw)
     }
     local coroLabels = {

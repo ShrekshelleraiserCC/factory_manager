@@ -446,6 +446,59 @@ local function batch_execute(func, skipPartial)
     return table.pack(table.unpack(func, 1 + executeLimit * batches))
 end
 
+---@class Factory
+local factory__index = {}
+
+local factory_meta = { __index = factory__index }
+---@param node Node
+function factory__index:add_node(node)
+    self.nodes[#self.nodes + 1] = node
+end
+
+---@param node Node
+function factory__index:remove_node(node)
+    for i, node_i in ipairs(self.nodes) do
+        if node_i == node then
+            table.remove(self.nodes, i)
+            break
+        end
+    end
+    unlink(node.inputs)
+    unlink(node.outputs)
+end
+
+function factory__index:start_ticking()
+    while true do
+        sleep(tick_delay)
+        if active then
+            local funcs = {}
+            for _, v in ipairs(self.nodes) do
+                local funcs_l = v:tick()
+                merge_into(funcs_l or {}, funcs)
+            end
+            batch_execute(funcs)
+        end
+    end
+end
+
+---@param e any[]
+function factory__index:distribute_event(e)
+    for k, v in ipairs(self.nodes) do
+        if v[e[1]](v, table.unpack(e, 2, 5)) then return true end
+    end
+end
+
+function factory__index:serialize()
+    local serializing_nodes = deepcopy(self.nodes) --[[@as NodeT]]
+    for _, node in ipairs(serializing_nodes) do
+        node.window = nil
+        serialize_node(node)
+        if node.node_type then
+            registered_nodes[node.node_type].serialize(node)
+        end
+    end
+    return textutils.serialise(serializing_nodes, { compact = false })
+end
 
 local function new_factory()
     ---@class Factory
@@ -454,56 +507,7 @@ local function new_factory()
         nodes = {}
     }
 
-    ---@param node Node
-    function factory.add_node(node)
-        factory.nodes[#factory.nodes + 1] = node
-    end
-
-    ---@param node Node
-    function factory.remove_node(node)
-        for i, node_i in ipairs(factory.nodes) do
-            if node_i == node then
-                table.remove(factory.nodes, i)
-                break
-            end
-        end
-        unlink(node.inputs)
-        unlink(node.outputs)
-    end
-
-    function factory.start_ticking()
-        while true do
-            sleep(tick_delay)
-            if active then
-                local funcs = {}
-                for _, v in ipairs(factory.nodes) do
-                    local funcs_l = v:tick()
-                    merge_into(funcs_l or {}, funcs)
-                end
-                batch_execute(funcs)
-            end
-        end
-    end
-
-    function factory.distribute_event(e)
-        for k, v in ipairs(factory.nodes) do
-            if v[e[1]](v, table.unpack(e, 2, 5)) then return true end
-        end
-    end
-
-    function factory.serialize()
-        local serializing_nodes = deepcopy(factory.nodes) --[[@as NodeT]]
-        for _, node in ipairs(serializing_nodes) do
-            node.window = nil
-            serialize_node(node)
-            if node.node_type then
-                registered_nodes[node.node_type].serialize(node)
-            end
-        end
-        return textutils.serialise(serializing_nodes, { compact = false })
-    end
-
-    return factory
+    return setmetatable(factory, factory_meta)
 end
 
 ---@param text string
