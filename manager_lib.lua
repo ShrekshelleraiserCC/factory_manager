@@ -731,12 +731,16 @@ local function initMenubar()
             f.close()
         end
     end)
+    local testButton = mbar.button("Sort Factory", function(entry)
+        factory:sort()
+    end)
     local fileMenu = mbar.buttonMenu {
         settingsButton,
         resetViewButton,
         saveAsButton,
         openButton,
-        quitButton
+        quitButton,
+        testButton
     }
     local fileButton = mbar.button("File", nil, fileMenu)
 

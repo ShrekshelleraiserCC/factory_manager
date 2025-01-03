@@ -453,6 +453,7 @@ local factory_meta = { __index = factory__index }
 ---@param node Node
 function factory__index:add_node(node)
     self.nodes[#self.nodes + 1] = node
+    self:sort()
 end
 
 ---@param node Node
@@ -465,20 +466,95 @@ function factory__index:remove_node(node)
     end
     unlink(node.inputs)
     unlink(node.outputs)
+    self:sort()
+end
+
+function factory__index:tick()
+    local funcs = {}
+    self:sort()
+    for _, v in ipairs(self.nodes) do
+        local funcs_l = v:tick()
+        merge_into(funcs_l or {}, funcs)
+    end
+    batch_execute(funcs)
 end
 
 function factory__index:start_ticking()
     while true do
         sleep(tick_delay)
         if active then
-            local funcs = {}
-            for _, v in ipairs(self.nodes) do
-                local funcs_l = v:tick()
-                merge_into(funcs_l or {}, funcs)
-            end
-            batch_execute(funcs)
+            self:tick()
         end
     end
+end
+
+---@class NodeBeingSorted : Node
+---@field temporary boolean?
+---@field permanant boolean?
+---@field dependencies Node[]
+
+function factory__index:sort()
+    ---@type NodeBeingSorted[]
+    local unorderedNodes = self.nodes
+    ---@type NodeBeingSorted[]
+    local nodeTickOrder = {}
+    ---@type table<NodeBeingSorted,NodeBeingSorted>
+    local nodeLookup = {}
+
+    for _, v in ipairs(unorderedNodes) do
+        nodeLookup[v] = v
+        v.dependencies = {}
+        for _, con in ipairs(v.inputs) do
+            if con.link_parent then
+                v.dependencies[#v.dependencies + 1] = con.link_parent
+            end
+        end
+    end
+
+    -- https://en.wikipedia.org/wiki/Topological_sorting#Depth-first_search
+    ---@param node NodeBeingSorted
+    local function visit(node)
+        if node.permanant then
+            return
+        elseif node.temporary then
+            error("Cyclic dependency tree")
+        end
+        node.temporary = true
+
+        for _, id in ipairs(node.dependencies or {}) do
+            local depModule = nodeLookup[id]
+            if depModule then
+                visit(depModule)
+            end
+        end
+
+        node.temporary = nil
+        node.permanant = true
+        table.insert(nodeTickOrder, node)
+    end
+
+    local function getUnmarked()
+        for k, v in pairs(unorderedNodes) do
+            if not v.permanant then
+                return v
+            end
+        end
+        return nil
+    end
+
+    local unmarked = getUnmarked()
+    while unmarked do
+        visit(unmarked)
+        unmarked = getUnmarked()
+    end
+
+    for k, v in ipairs(nodeTickOrder) do
+        v.permanant = nil
+        v.temporary = nil
+        v.dependencies = nil
+    end
+
+    self.nodes = nodeTickOrder
 end
 
 ---@param e any[]
