@@ -969,15 +969,15 @@ local function draw()
     while true do
         if render_nodes then
             manager_view.render_nodes_start(factory.nodes)
-            for k, v in pairs(factory.nodes) do
-                clear_packet_recieved(v)
-            end
             manager_control.render_connection()
             manager_view.render_box()
             manager_view.render_nodes_content(factory.nodes)
             draw_ui()
             nodes_win.setVisible(true)
             nodes_win.setVisible(false)
+        end
+        for k, v in pairs(factory.nodes) do
+            clear_packet_recieved(v)
         end
         while true do
             local _, tid = os.pullEvent("timer")
@@ -1029,16 +1029,6 @@ local function start()
         end
     end
 end
-
----@alias ConfigType "string"|"con_type"|"file"|"peripheral"|"number"|string[]
-
----@alias ConfigFieldInfo table<string,{type: ConfigType,description:string?, peripheral:peripheralType[]?}>
----@alias ConFieldSetter fun(con: Connector, key: string, value: any)
----@alias SerializeConFun fun(con: Connector)
----@alias NewConnectorFun fun():Connector
----@alias RegisteredConnector {name:string,new:NewConnectorFun,serialize:SerializeConFun,unserialize:SerializeConFun,configurable_fields:ConfigFieldInfo?,set_field:ConFieldSetter?,char:string?}
-
-
 
 
 return {

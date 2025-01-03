@@ -9,7 +9,7 @@ for _, f in ipairs(connector_files) do
 end
 local node_files = fs.list("nodes")
 for _, f in ipairs(node_files) do
-    require("nodes." .. f:match("^(%a+)%.lua$"))
+    require("nodes." .. f:match("^([%a_]+)%.lua$"))
 end
 
 local args = { ... }

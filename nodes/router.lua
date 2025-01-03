@@ -43,12 +43,9 @@ local function set_type(node, value, bypass)
     if value == node.inputs[1].con_type and not bypass then
         return
     end
-    local color = lib.get_connector(value).color
     for i = 1, node.max_output do
         node.outputs[i].con_type = value
-        node.outputs[i].color    = color
     end
-    node.inputs[1].color    = color
     node.inputs[1].con_type = value
     node.conector_type      = value
     lib.unlink(node.inputs)

@@ -71,10 +71,14 @@ end
 function node__index:draw_lines()
     for k, v in pairs(self.outputs) do
         if v.link then
-            if v.sent_a_packet and show_packets then
-                d.set_col(colors.orange, nil, nodes_win)
+            local packet = manager_data.get_con_packet(v)
+            if packet.render_callback then
+                local col = packet.render_callback(v)
+                d.set_col(col, nil, nodes_win)
+            elseif v.sent_a_packet and show_packets then
+                d.set_col(packet.sent_color or colors.orange, nil, nodes_win)
             else
-                d.set_col(v.color or colors.white, nil, nodes_win)
+                d.set_col(packet.color or colors.white, nil, nodes_win)
             end
             line_func(
                 self.x + self.w + disp_context.root_x,
@@ -92,18 +96,23 @@ end
 ---@param side "right"|"left"
 local function draw_connectors(node, connectors, side)
     for k, v in pairs(connectors) do
-        local def_icon = registered_connectors[v.con_type].char or "\007"
+        local packet = manager_data.get_con_packet(v)
+        local def_icon = packet.char or "\007"
         local icon = (disp_context.last_selected == v and not node.locked and "\127") or def_icon
         if disp_context.last_selected == v and node.locked then
             d.set_col(colors.white, colors.black, node.window)
             node.window.setCursorPos(1, 1)
             node.window.write("\127")
         end
-        if v.sent_a_packet and show_packets then
-            d.set_col(colors.orange, nil, node.window)
-            icon = "!"
+        if packet.render_callback then
+            local col, nicon = packet.render_callback(v)
+            d.set_col(col, nil, node.window)
+            icon = nicon
+        elseif v.sent_a_packet and show_packets then
+            d.set_col(packet.sent_color or colors.orange, nil, node.window)
+            icon = packet.sent_icon or "!"
         else
-            d.set_col(v.color or colors.white, nil, node.window)
+            d.set_col(packet.color or colors.white, nil, node.window)
         end
         if side == "left" then
             d.invert(node.window)

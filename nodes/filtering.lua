@@ -56,10 +56,6 @@ local function set_type(node, value)
     if value == node.inputs[1].con_type then
         return
     end
-    local color              = lib.get_connector(value).color
-    node.inputs[1].color     = color
-    node.outputs[2].color    = color
-    node.outputs[1].color    = color
     node.inputs[1].con_type  = value
     node.outputs[2].con_type = value
     node.outputs[1].con_type = value

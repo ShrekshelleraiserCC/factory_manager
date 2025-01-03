@@ -59,7 +59,7 @@ function node__index:update_size()
             output.y = h
         end
         h = h + 1
-        w = math.max(w, layer_w)
+        w = math.max(w, layer_w + 1)
     end
     self.h = h
     self.w = w
@@ -98,11 +98,6 @@ function node__index:validate_connections()
     validate_connections(self.inputs)
     validate_connections(self.outputs)
 end
-
----@type table<string,RegisteredNode>
-local registered_nodes = {}
----@type table<string,RegisteredConnector>
-local registered_connectors = {}
 
 ---Add an input connector
 ---@param con Connector
@@ -256,28 +251,92 @@ local function clear_packet_recieved(node)
 end
 
 
+---@alias ConfigType "string"|"con_type"|"file"|"peripheral"|"number"|string[]
+
+---@alias ConfigFieldInfo table<string,{type: ConfigType,description:string?, peripheral:peripheralType[]?}>
+---@alias ConFieldSetter fun(con: Connector, key: string, value: any)
+---@alias SerializeConFun fun(con: Connector)
+---@alias NewConnectorFun fun():Connector
+
+---@class RegisteredConnector
+---@field name string
+---@field new NewConnectorFun
+---@field serialize SerializeConFun
+---@field unserialize SerializeConFun
+---@field configurable_fields ConfigFieldInfo?
+---@field set_field ConFieldSetter
+---@field packet string
+
+
+---@type table<string,RegisteredNode>
+local registered_nodes = {}
+---@type table<string,RegisteredConnector>
+local registered_connectors = {}
+
+---@alias packetRenderCallback fun(con:Connector):color,string
+
+---@class RegisteredPacket
+---@field name string
+---@field char string?
+---@field color color?
+---@field sent_color color?
+---@field sent_icon string?
+---@field render_callback packetRenderCallback?
+
+---@type table<string,RegisteredPacket>
+local registered_packets = {}
+
+---@param name string
+---@param color color?
+---@param char string?
+---@param sent_color color?
+---@param sent_icon string?
+---@param on_render packetRenderCallback?
+local function register_packet(name, color, char, sent_color, sent_icon, on_render)
+    registered_packets[name] = {
+        name = name,
+        char = char,
+        color = color,
+        sent_icon = sent_icon,
+        sent_color = sent_color,
+        render_callback = on_render
+    }
+end
+
+local function get_packet(name)
+    return registered_packets[name]
+end
+
+---Get the registered packet information given a connector
+---@param con Connector
+---@return RegisteredPacket
+local function get_con_packet(con)
+    local con_type = registered_connectors[con.con_type]
+    return get_packet(con_type.packet)
+end
+
 ---Register a new type of connector
 ---@param name string
+---@param packet string
 ---@param new fun(): Connector
 ---@param serialize SerializeConFun
 ---@param unserialize SerializeConFun
 ---@param configurable_fields ConfigFieldInfo?
 ---@param set_field ConFieldSetter?
----@param color color
----@param char string?
-local function register_connector(name, new, serialize, unserialize, configurable_fields, set_field, color, char)
+local function register_connector(name, packet, new, serialize, unserialize, configurable_fields, set_field)
     registered_connectors[name] = {
         new = new,
+        packet = packet,
         serialize = serialize,
         unserialize = unserialize,
         configurable_fields = configurable_fields,
         set_field = set_field,
-        color = color,
-        char = char
+        name = name
     }
 end
 
-register_connector("DEFAULT", new_connector, function() end, function() end, nil, nil, colors.white)
+register_packet("DEFAULT")
+register_connector("DEFAULT", "DEFAULT", new_connector, function() end, function() end)
 ---@param name string
 ---@return RegisteredConnector
 local function get_connector(name)
@@ -612,10 +671,14 @@ return {
     registered_nodes = registered_nodes,
     new_connector = new_connector,
     get_connector = get_connector,
+    get_packet = get_packet,
+    get_con_packet = get_con_packet,
     new_node = new_node,
     get_node = get_node,
     unserialize = unserialize,
     register_connector = register_connector,
     register_node = register_node,
-    new_factory = new_factory
+    register_packet = register_packet,
+    new_factory = new_factory,
+    unlink = unlink
 }
