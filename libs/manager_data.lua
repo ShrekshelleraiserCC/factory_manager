@@ -261,20 +261,6 @@ end
 ---@alias SerializeConFun fun(con: Connector)
 ---@alias NewConnectorFun fun():Connector
 
----@class RegisteredConnector
----@field name string
----@field new NewConnectorFun
----@field serialize SerializeConFun
----@field unserialize SerializeConFun
----@field configurable_fields ConfigFieldInfo?
----@field set_field ConFieldSetter
----@field packet string
-
-
----@type table<string,RegisteredNode>
-local registered_nodes = {}
----@type table<string,RegisteredConnector>
-local registered_connectors = {}
 
 ---@alias packetRenderCallback fun(con:Connector):color,string
 
@@ -310,6 +296,21 @@ local function get_packet(name)
     return registered_packets[name]
 end
 
+---@class RegisteredConnector
+---@field name string
+---@field new NewConnectorFun
+---@field serialize SerializeConFun
+---@field unserialize SerializeConFun
+---@field configurable_fields ConfigFieldInfo?
+---@field set_field ConFieldSetter
+---@field packet string
+
+
+---@type table<string,RegisteredNode>
+local registered_nodes = {}
+---@type table<string,RegisteredConnector>
+local registered_connectors = {}
+
 ---Get the registered packet information given a connector
 ---@param con Connector
 ---@return RegisteredPacket
@@ -318,28 +319,54 @@ local function get_con_packet(con)
     return get_packet(con_type.packet)
 end
 
+---@class RegisteredConnector
+local register_connector__index = {}
+local register_connector_meta = { __index = register_connector__index }
+
+---@param serialize SerializeConFun
+---@param unserialize SerializeConFun
+---@return RegisteredConnector
+function register_connector__index:set_serializers(serialize, unserialize)
+    self.serialize = serialize
+    self.unserialize = unserialize
+    return self
+end
+
+---@param meta {__index:table}
+---@return RegisteredConnector
+function register_connector__index:set_default_unserializer(meta)
+    self.unserialize = function(con)
+        setmetatable(con, meta)
+    end
+    return self
+end
+
+---@param config_fields ConfigFieldInfo
+---@param set_field ConFieldSetter
+---@return RegisteredConnector
+function register_connector__index:set_config(config_fields, set_field)
+    self.configurable_fields = config_fields
+    self.set_field = set_field
+    return self
+end
+
 ---Register a new type of connector
 ---@param name string
 ---@param packet string
 ---@param new fun(): Connector
----@param serialize SerializeConFun
----@param unserialize SerializeConFun
----@param configurable_fields ConfigFieldInfo?
----@param set_field ConFieldSetter?
-local function register_connector(name, packet, new, serialize, unserialize, configurable_fields, set_field)
-    registered_connectors[name] = {
+local function register_connector(name, packet, new)
+    ---@type RegisteredConnector
+    local registered = setmetatable({
         new = new,
         packet = packet,
-        serialize = serialize,
-        unserialize = unserialize,
-        configurable_fields = configurable_fields,
-        set_field = set_field,
         name = name
-    }
+    }, register_connector_meta)
+    registered_connectors[name] = registered
+    return registered
 end
 
 register_packet("DEFAULT")
-register_connector("DEFAULT", "DEFAULT", new_connector, function() end, function() end)
+register_connector("DEFAULT", "DEFAULT", new_connector)
 ---@param name string
 ---@return RegisteredConnector
 local function get_connector(name)
@@ -350,26 +377,57 @@ end
 ---@alias NodeFieldSetter fun(con: Node, key: string, value: any)
 ---@alias SerializeNodeFun fun(con: Node)
 ---@alias NewNodeFun fun():Node
----@alias RegisteredNode {name:string,new:NewNodeFun,serialize:SerializeNodeFun,unserialize:SerializeNodeFun,configurable_fields:ConfigFieldInfo?,set_field:NodeFieldSetter?}
+---@class RegisteredNode {name:string,new:NewNodeFun,serialize:SerializeNodeFun,unserialize:SerializeNodeFun,configurable_fields:ConfigFieldInfo?,set_field:NodeFieldSetter?}
+---@field name string
+---@field new NewNodeFun
+---@field serialize SerializeNodeFun?
+---@field unserialize SerializeNodeFun?
+---@field configurable_fields ConfigFieldInfo?
+---@field set_field NodeFieldSetter?
 
+---@class RegisteredNode
+local register_node__index = {}
+local register_node_meta = { __index = register_node__index }
+
+---@param serialize SerializeNodeFun
+---@param unserialize SerializeNodeFun
+---@return RegisteredNode
+function register_node__index:set_serializers(serialize, unserialize)
+    self.serialize = serialize
+    self.unserialize = unserialize
+    return self
+end
+
+---@param meta {__index:table}
+---@return RegisteredNode
+function register_node__index:set_default_unserializer(meta)
+    self.unserialize = function(con)
+        setmetatable(con, meta)
+    end
+    return self
+end
+
+---@param config_fields ConfigFieldInfo
+---@param set_field NodeFieldSetter
+---@return RegisteredNode
+function register_node__index:set_config(config_fields, set_field)
+    self.configurable_fields = config_fields
+    self.set_field = set_field
+    return self
+end
 
 ---@param name string
 ---@param new NewNodeFun
----@param serialize SerializeNodeFun
----@param unserialize SerializeNodeFun
----@param configurable_fields ConfigFieldInfo?
----@param set_field NodeFieldSetter?
-local function register_node(name, new, serialize, unserialize, configurable_fields, set_field)
-    registered_nodes[name] = {
+local function register_node(name, new)
+    local registered = setmetatable({
+        name = name,
         new = new,
-        serialize = serialize,
-        unserialize = unserialize,
-        configurable_fields = configurable_fields,
-        set_field = set_field
-    }
+    }, register_node_meta)
+    registered_nodes[name] = registered
+    return registered
 end
 
-register_node("DEFAULT", new_node, function() end, function() end, nil, nil)
+register_node("DEFAULT", new_node)
 
 ---@param name string
 ---@return RegisteredNode

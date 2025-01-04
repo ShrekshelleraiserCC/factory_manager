@@ -148,4 +148,5 @@ local function set_field(node, key, value)
     end
 end
 
-lib.register_node("routing", new_routing_node, serialize, unserialize, configurable_fields, set_field)
+lib.register_node("routing", new_routing_node):set_serializers(serialize, unserialize)
+    :set_config(configurable_fields, set_field)

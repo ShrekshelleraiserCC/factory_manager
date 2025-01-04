@@ -114,4 +114,5 @@ local function set_field(node, key, value)
     end
 end
 
-lib.register_node("filtering", new_filtering_node, serialize, unserialize, configurable_fields, set_field)
+lib.register_node("filtering", new_filtering_node):set_serializers(serialize, unserialize)
+    :set_config(configurable_fields, set_field)

@@ -87,7 +87,7 @@ local function register(registry_name, type, func, input_count, output_count, ga
     }
     lib.register_node(registry_name, function()
         return new_logic_node(registry_name, type)
-    end, serialize, unserialize)
+    end):set_serializers(serialize, unserialize)
 end
 
 
@@ -147,13 +147,5 @@ local function new_switch_node()
     return node
 end
 
----@param node FilteringNode
-local function serialize_switch(node)
-    node = node --[[@as SerializedFilteringNode]]
-end
 
-local function unserialize_switch(node)
-    setmetatable(node, switch_meta)
-end
-
-lib.register_node("switch", new_switch_node, serialize_switch, unserialize_switch)
+lib.register_node("switch", new_switch_node):set_default_unserializer(switch_meta)

@@ -40,14 +40,6 @@ function redstone_con__index:tick()
     }
 end
 
-local function serialize(con)
-    con.last_level = nil
-end
-
-local function unserialize(con)
-    setmetatable(con, redstone_con_meta)
-end
-
 ---Create a new redstone connector
 ---@return RedstoneConnector
 local function new_redstone_connector()
@@ -85,5 +77,6 @@ local function set_field(con, key, value)
     end
 end
 
-lib.register_connector("redstone", new_redstone_connector, serialize, unserialize, configurable_fields, set_field,
-    colors.red)
+lib.register_packet("redstone", colors.red)
+lib.register_connector("redstone", "redstone", new_redstone_connector):set_config(configurable_fields, set_field)
+    :set_default_unserializer(redstone_con_meta)

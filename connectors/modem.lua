@@ -60,7 +60,7 @@ end
 
 local function serialize(con)
     con.message_queue = {}
-    close(con)
+    close(con) -- TODO is this okay????
 end
 
 local function unserialize(con)
@@ -109,4 +109,5 @@ local function set_field(con, key, value)
 end
 
 lib.register_packet("modem", colors.yellow)
-lib.register_connector("modem", "modem", new_modem_connector, serialize, unserialize, configurable_fields, set_field)
+lib.register_connector("modem", "modem", new_modem_connector):set_serializers(serialize, unserialize)
+    :set_config(configurable_fields, set_field)

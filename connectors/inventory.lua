@@ -62,14 +62,6 @@ local function new_inventory_connector()
     return setmetatable(con, inv_con_meta)
 end
 
-local function serialize(con)
-
-end
-
-local function unserialize(con)
-    setmetatable(con, inv_con_meta)
-end
-
 local configurable_fields = {
     inventory = {
         type = "peripheral",
@@ -91,5 +83,6 @@ local function set_field(con, key, value)
     end
 end
 
-lib.register_connector("inventory", new_inventory_connector, serialize, unserialize, configurable_fields, set_field,
-    colors.green)
+lib.register_packet("inventory", colors.green)
+lib.register_connector("inventory", "inventory", new_inventory_connector):set_config(configurable_fields, set_field)
+    :set_default_unserializer(inv_con_meta)

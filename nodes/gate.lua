@@ -30,14 +30,12 @@ local function new_gate_node()
     setmetatable(node, node_meta)
     local input_connector = lib.new_connector()
     node:add_input(input_connector)
-    node.input_connector = input_connector
 
     local bool_connector = lib.get_connector("boolean").new()
     node:add_input(bool_connector)
 
     local true_connector = lib.new_connector()
     node:add_output(true_connector)
-    node.output_connector = true_connector
 
     return node
 end
@@ -51,23 +49,10 @@ local function set_type(node, value)
     if value == node.input_connector.con_type then
         return
     end
-    node.input_connector.con_type  = value
-    node.output_connector.con_type = value
+    node.inputs[1].con_type  = value
+    node.outputs[1].con_type = value
     lib.unlink(node.inputs)
     lib.unlink(node.outputs)
-end
-
----@param node GateNode
-local function serialize(node)
-    node = node --[[@as SerializedGateNode]]
-    node.input_connector = node.input_connector.id
-    node.output_connector = node.output_connector.id
-end
-
-local function unserialize(node)
-    node.input_connector = node.inputs[1]
-    node.output_connector = node.outputs[1]
-    setmetatable(node, node_meta)
 end
 
 local configurable_fields = {
@@ -87,4 +72,5 @@ local function set_field(node, key, value)
     end
 end
 
-lib.register_node("gate", new_gate_node, serialize, unserialize, configurable_fields, set_field)
+lib.register_node("gate", new_gate_node):set_default_unserializer(node_meta)
+    :set_config(configurable_fields, set_field)

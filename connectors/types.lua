@@ -63,7 +63,8 @@ end
 ---@param on_render packetRenderCallback?
 local function register_connector(con_type, color, char, sent_color, sent_icon, on_render)
     lib.register_packet(con_type, color, char, sent_color, sent_icon, on_render)
-    lib.register_connector(con_type, con_type, new_connector_factory(con_type, color), serialize, unserialize)
+    lib.register_connector(con_type, con_type, new_connector_factory(con_type, color))
+        :set_serializers(serialize, unserialize)
 end
 
 register_connector("number", colors.blue, "#")
