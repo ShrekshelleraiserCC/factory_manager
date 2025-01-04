@@ -74,7 +74,6 @@ local function new_modem_connector()
     ---@type ModemConnector
     local con = lib.new_connector() --[[@as ModemConnector]]
     con.con_type = "modem"
-    con.color = colors.yellow
     con.message_queue = {}
     return setmetatable(con, modem_con_meta)
 end

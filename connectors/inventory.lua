@@ -58,7 +58,6 @@ local inv_con_meta = { __index = inv_con__index }
 local function new_inventory_connector()
     local con = lib.new_connector() --[[@as InventoryConnector]]
     con.con_type = "inventory"
-    con.color = colors.green
     return setmetatable(con, inv_con_meta)
 end
 

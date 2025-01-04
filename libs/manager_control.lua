@@ -86,7 +86,7 @@ function node__index:mouse_up(b, x, y)
         -- on the left side
         for k, v in ipairs(self.inputs) do
             if v.y > y then break end
-            if y == v.y and v.con_type == disp_context.connection_connector.con_type then
+            if y == v.y and v.packet == disp_context.connection_connector.packet then
                 connection_end(self, v)
                 return true
             end

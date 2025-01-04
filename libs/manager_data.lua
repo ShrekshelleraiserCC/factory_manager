@@ -181,13 +181,12 @@ end
 ---@field sent_a_packet boolean?
 ---@field link Connector?
 ---@field link_parent Node?
+---@field packet string
 ---@field parent Node
 ---@field con_type string
 ---@field direction "input"|"output"
 ---@field label string?
----@field color color?
 ---@field y integer
----@field char string?
 ---@field id string
 ---@field recieve_packet fun(self:Connector,packet:Packet)
 ---@field tick fun(self:Connector):function[]? Run on a frequent basis

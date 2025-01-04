@@ -46,7 +46,6 @@ local function new_redstone_connector()
     ---@type RedstoneConnector
     local con = lib.new_connector() --[[@as RedstoneConnector]]
     con.con_type = "redstone"
-    con.color = colors.red
     return setmetatable(con, redstone_con_meta)
 end
 
