@@ -17,6 +17,7 @@ end
 ---@field drag_x integer
 ---@field drag_y integer
 ---@field locked boolean? Whether editing the connectors is allowed
+---@field locked_size boolean?
 ---@field x integer
 ---@field y integer
 ---@field w integer
@@ -44,9 +45,9 @@ function node__index:update_size()
     local w = #(self.label or "") + 2
     local h = 3
     local connection_height = math.max(#self.inputs, #self.outputs)
-    if connection_height > 0 then
-        h = h + 1
-    end
+    -- if connection_height > 0 then
+    --     h = h + 1
+    -- end
     for i = 1, connection_height do
         local layer_w = 4
         local input, output = self.inputs[i], self.outputs[i]
@@ -61,8 +62,10 @@ function node__index:update_size()
         h = h + 1
         w = math.max(w, layer_w + 1)
     end
-    self.h = h
-    self.w = w
+    if not self.locked_size then
+        self.h = h
+        self.w = w
+    end
     if self.update_window then
         self:update_window()
     end

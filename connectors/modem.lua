@@ -108,5 +108,5 @@ local function set_field(con, key, value)
     end
 end
 
-lib.register_connector("modem", new_modem_connector, serialize, unserialize, configurable_fields, set_field,
-    colors.yellow)
+lib.register_packet("modem", colors.yellow)
+lib.register_connector("modem", "modem", new_modem_connector, serialize, unserialize, configurable_fields, set_field)

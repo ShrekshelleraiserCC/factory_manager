@@ -6,7 +6,8 @@ local logic_gate_meta = { __index = logic_gate_node__index }
 ---@class LogicGateNode : Node
 ---@field gate_type string
 
----@alias LogicGateInfo {func:fun(...:boolean):boolean,number,number}
+---@alias LogicGateFunc fun(...:boolean):boolean
+---@alias LogicGateInfo {[1]:LogicGateFunc,[2]:number,[3]:number,[4]:string[][]?}
 ---@type table<string,LogicGateInfo>
 local logic_gate_types = {}
 
@@ -23,6 +24,17 @@ function logic_gate_node__index:tick()
         ---@diagnostic disable-next-line: inject-field
         self.outputs[i].value = result[i]
         lib.send_packet_to_link(self.outputs[i], { value = result[i] })
+    end
+end
+
+function logic_gate_node__index:draw()
+    lib.node__index.draw(self)
+    local info = logic_gate_types[self.gate_type]
+    if info[4] then
+        for i, v in ipairs(info[4]) do
+            self.window.setCursorPos(2, 2 + i)
+            self.window.blit(table.unpack(v))
+        end
     end
 end
 
@@ -64,11 +76,14 @@ end
 ---@param type string
 ---@param func fun(...:boolean):...:boolean
 ---@param input_count number
-local function register(registry_name, type, func, input_count, output_count)
+---@param output_count number?
+---@param gate_icon string[][]?
+local function register(registry_name, type, func, input_count, output_count, gate_icon)
     logic_gate_types[type] = {
         func,
         input_count,
-        output_count or 1
+        output_count or 1,
+        gate_icon
     }
     lib.register_node(registry_name, function()
         return new_logic_node(registry_name, type)
@@ -79,13 +94,13 @@ end
 
 register("logic_and", "AND", function(a, b)
     return a and b
-end, 2)
+end, 2, 1, { { "\151\131\150", "00f", "ff0" }, { "\138\143\154", "ff0", "00f" } })
 register("logic_or", "OR", function(a, b)
     return a or b
-end, 2)
+end, 2, 1, { { "\139\147\150", "00f", "ff0" }, { "\135\142\154", "ff0", "00f" } })
 register("logic_xor", "XOR", function(a, b)
     return (a or b) and not (a and b)
-end, 2)
+end, 2, 1, { { "\152\152\150", "fff", "000" }, { "\137\137\154", "ff0", "00f" } })
 register("logic_not", "NOT", function(a)
     return not a
 end, 1)
@@ -99,7 +114,7 @@ local switch_meta = { __index = switch_node__index }
 
 function switch_node__index:mouse_click(b, x, y)
     local sx, sy = self:screen_pos_to_local(x, y)
-    if sx == 2 and sy == 3 then
+    if sx > 1 and sx < self.w and sy == 3 then
         ---@diagnostic disable-next-line: inject-field
         self.outputs[1].value = not self.outputs[1].value
         lib.send_packet_to_link(self.outputs[1], { value = self.outputs[1].value })
@@ -111,7 +126,7 @@ end
 function switch_node__index:draw()
     lib.node__index.draw(self)
     self.window.setCursorPos(2, 3)
-    self.window.write("\007")
+    self.window.write("<TOGGLE>")
 end
 
 ---@class SwitchNode : Node
@@ -119,8 +134,11 @@ end
 local function new_switch_node()
     local node = lib.new_node() --[[@as LogicGateNode]]
     node.locked = true
-    node.node_type = "switch_node"
+    node.node_type = "switch"
     node.label = "Switch"
+    node.locked_size = true
+    node.w = 10
+    node.h = 4
 
     setmetatable(node, switch_meta)
     local output_connector = lib.get_connector("boolean").new()
@@ -135,7 +153,7 @@ local function serialize_switch(node)
 end
 
 local function unserialize_switch(node)
-    setmetatable(node, logic_gate_meta)
+    setmetatable(node, switch_meta)
 end
 
-lib.register_node("switch_node", new_switch_node, serialize_switch, unserialize_switch)
+lib.register_node("switch", new_switch_node, serialize_switch, unserialize_switch)
